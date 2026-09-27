@@ -1,0 +1,59 @@
+# @package _global_
+#
+# Joint distance + property prompting for ZINC.
+#
+# Trains a CLM to follow BOTH a property prompt (logP direction + magnitude) AND a desired
+# structural distance prompt (<dc><d_NN>) simultaneously — the end goal: "improve logP AND
+# stay ~this similar to the seed". Combines the property-prompt tokens (<p_logp>, <pdir_*>,
+# <pd_logp_*>) with the distance-prompt tokens.
+#
+# Use with:
+#   pairit_train --config-name train_molecule_improvement \
+#       experiment=zinc_distance_and_property data=zinc_molecule_improvement
+#
+# Notes:
+# - keep_original_ordering=true so pairs appear in BOTH logP directions (else utility-directed
+#   ordering makes logP always "up" and the model never learns to decrease it).
+# - Distance uses fixed_quartiles (4 bins), matching the clean distance-only result.
+# - Overrides live under `data:` and `/prompting` is listed BEFORE `_self_` so they win
+#   (see the @package gotcha in zinc_distance_only.yaml).
+
+defaults:
+  - /prompting: zinc_all_props
+  - _self_
+
+data:
+  keep_original_ordering: true  # both logP directions present in training pairs
+  transform_fn:
+    tokenizer:
+      # BOTH prompt token families.
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${....prompting.properties.names}
+        num_value_bins: ${....prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${....prompting.properties.delta_binning.default.num_bins}
+      add_distance_prompt_tokens: ${...prompting.distance.enabled}
+      distance_prompt_tokens:
+        num_bins: ${....prompting.distance.binning.num_bins}
+  prompting:
+    properties:
+      enabled: true
+      names: [logp]          # single property for the first joint model
+      selection:
+        mode: all            # every example gets the logP prompt
+    distance:
+      enabled: true
+      binning:
+        mode: fixed_quartiles
+        num_bins: 4          # <d_00>..<d_03>
+      source:
+        distribution_file: "distance_distributions.parquet"
+        distance_column: "morgan_tanimoto_distance"
+        is_similarity: false
+        min_pairs_per_molecule: 10
+        max_fraction_low_pairs: 0.1
+        compute_if_missing: true
+
+callbacks:
+  molecule_validation:
+    prompting: ${data.prompting}

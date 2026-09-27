@@ -1,0 +1,82 @@
+# Best-of-N inference-time compute configuration
+#
+# Generates N molecules per seed, applies V,I,N hard-gate filtering,
+# ranks by a target property, and returns the best per seed.
+#
+# To run:
+#   pairit_best_of_n model.ckpt_path=/path/to/checkpoint.ckpt
+
+defaults:
+  - _self_
+  - data@datamodule: zinc_molecule_improvement
+
+# RNG seed for reproducible inference (#37). Seeds torch/numpy/python-random at
+# entry-point time via lightning.seed_everything, so per-SMILES output is stable
+# across identical inputs. Override on the command line for seed-variation runs.
+seed: 42
+
+# Split to use for seed molecules
+split: test
+
+# Datamodule overrides
+datamodule:
+  keep_original_ordering: true
+
+# Model configuration
+model:
+  _target_: pairit.model.PairITCLM2
+  ckpt_path: ???  # Required
+  run_name: ${extract_run_name:${model.ckpt_path}}
+  extra_name: best_val
+  model_name: CLM_68M
+  max_length: 300
+  transform_fn: ${datamodule.transform_fn}
+
+# Generation parameters (shared with beam search)
+generation:
+  temperature: 0.5
+  batch_size: 16
+
+# Best-of-N specific parameters
+best_of_n:
+  n: 64                        # Number of generations per seed
+  batch_size: 16               # Generation batch size (overrides generation.batch_size)
+  vin_hard_gate: true          # Require V,I,N to be eligible for selection
+  vin_fallback: valid_only     # Fallback when no V,I,N: 'valid_only' | 'none'
+  ranking_property: logp       # Property to rank by after V,I,N filter
+  ranking_direction: increasing  # 'increasing' (higher is better) or 'decreasing'
+  improvement_threshold: 0.5     # Improvement = gen > this value (for binary classifiers). null = marginal improvement.
+  top_k: 5                       # Number of molecules to select per seed (top-k by property)
+
+# Seed extraction
+seeds:
+  max_seeds: null              # Limit seeds (null = all from split)
+  deduplicate: true
+
+# Reference SMILES for memorization checking
+# Example:
+#   reference_smiles_files:
+#     - name: zinc_train
+#       path: /path/to/zinc_train.parquet
+#       default: true
+reference_smiles_files: []
+smiles_column: smiles
+
+# Properties to compute (ranking property is always included)
+properties:
+  property_names:
+    - logp
+    - qed
+    - sa
+
+# Output
+output:
+  dir: ${oc.env:PAIRIT_OUTPUT_ROOT,./outputs}/${model.run_name}/best_of_n/${model.extra_name}/${split}/${now:%Y-%m-%d_%H-%M-%S}
+
+# Eval config overlay: set to an existing eval config name (e.g. "zinc_pair_evaluate")
+# to inherit reference_smiles_files, property_names, ranking_property, temperature.
+# Explicit values in this config take precedence.
+eval_config: null
+
+# Device
+device: null  # null = auto-detect

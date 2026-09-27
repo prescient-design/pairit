@@ -1,0 +1,47 @@
+# src/pairit/hydra_config/data/molecule_improvement.yaml
+defaults:
+  - _self_
+  - transform_fn: smiles_tokenizer_transform
+
+_target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
+
+# Data root directory
+root: "${pairit_assets:data/moleculenet/bace}"  # Directory containing molecules.parquet and pairs.parquet
+molecule_filename: "train/molecules.parquet"
+val_molecule_filename: "valid/molecules.parquet"
+test_molecule_filename: "test/molecules.parquet"
+train_pair_filename: "train/pairs.parquet"
+val_pair_filename: "valid/pairs.parquet"
+test_pair_filename: "test/pairs.parquet"
+
+# Utility selection
+utility_key: "Class"  # Can be "gap", "homo", "lumo", "u0", "u", "h", "g", etc.
+utility_key_fallback: "bace_b_oracle_pred" # added
+
+# Filtering parameters
+shape_tanimoto_percentile: null #1.0
+shape_tanimoto_num_pairs: null #100
+
+# Filtering parameters
+delta: None #0.3  # Distance threshold
+epsilon: 0.5  # Utility improvement threshold # this is included already in the parquet file generation..
+
+use_cache: false
+
+just_first: false
+
+keep_original_ordering: false
+
+# Training parameters
+batch_size: 64 # was previously 4
+shuffle: true
+num_workers: 4
+pin_memory: true
+drop_last: true
+max_train_samples: null #1000
+
+utility_direction: "increasing"
+
+# Debugging options
+debug_remix_splits: false  # Set to true to mix train/val and re-divide randomly (checks for distribution shift)
+debug_remix_seed: 42  # Seed for reproducible remixing when debug_remix_splits is true

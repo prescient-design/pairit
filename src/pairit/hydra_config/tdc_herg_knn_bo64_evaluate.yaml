@@ -1,0 +1,58 @@
+# Best-of-64 evaluation for TDC hERG — the main-paper protocol.
+#
+# Generates **64 molecules per test seed** (vs 5 in tdc_herg_knn_evaluate.yaml) so the
+# numbers are directly comparable with the other methods in the paper, which all used 64.
+# Downstream, a separate oracle (minimol, in the TDC evaluator dir) selects
+# the top 5 per seed before the reported metrics are computed.
+#
+# Seeds are ALL test molecules (`ignore_pairs`), not the worse member of each test pair —
+# matching "for each of the test set molecules we performed seeded generation". The
+# pair-based config only reaches the subset of molecules that appear in a pair.
+#
+# `generation_only` skips pairit's own expensive metrics; pairit_eval computes V,N,R,I
+# and diversity from the exported CSV, which is the canonical source anyway.
+
+defaults:
+  - pair_evaluate
+  - _self_
+  - override data@datamodule: tdc_herg_knn_molecule_improvement
+
+split: test
+
+datamodule:
+  ignore_pairs: true            # seeds = every test molecule
+  seeds_only_conditional: true
+  batch_size: 64
+
+model:
+  ckpt_path: ${pairit_assets:checkpoints/pairit/tdc/herg/finetuned.ckpt}
+
+callbacks:
+  - _target_: pairit.callbacks.MoleculeValidationCallback
+    num_unconditional_generations: 0
+    num_conditional_generations: 1e9
+    num_generations_per_seed: 64          # paper protocol
+    temperature: 0.5
+    generation_only: true                 # metrics deferred to pairit_eval
+    save_generated_samples: true
+    save_dir: ${output_dir}/generated_molecules
+    max_samples_to_save: 1e9
+    save_pdfs: false
+    visualization_property_name: herg_block
+    property_names: [herg_block]
+    utility_key: ${datamodule.utility_key}
+    utility_direction: ${datamodule.utility_direction}
+    export_pairit_csv: true
+    pairit_method_name: pairit
+    pairit_dataset_name: herg
+
+pairit_eval:
+  enabled: true
+  dataset: herg
+  property_metrics: true
+  property_names: "herg_block"
+  distribution: true
+  save: true
+  extra_train_smiles:
+    herg_train: ${pairit_assets:data/tdc/herg/train/molecules.parquet}
+    zinc_train: ${pairit_assets:data/zinc/train/molecules.parquet}

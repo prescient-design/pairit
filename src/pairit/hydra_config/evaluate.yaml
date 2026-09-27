@@ -1,0 +1,11 @@
+# Minimal top-level Hydra config for the `pairit_eval` CLI entry point.
+#
+# Real evaluations should override with a specific variant, e.g.:
+#     pairit_eval --config-name=bace_real_pair_evaluate \
+#         model.ckpt_path='/path/to/checkpoint.ckpt' split=test
+#
+# See evaluate.py docstring for the full invocation pattern. This stub exists
+# so that `pairit_eval -h` succeeds; actual evaluation values come from the
+# chosen variant config, this file provides no defaults of its own.
+defaults:
+  - _self_

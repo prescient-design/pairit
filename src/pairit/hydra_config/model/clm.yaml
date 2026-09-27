@@ -1,0 +1,28 @@
+# CLM legacy model config (protein / FASTA training).
+# For molecule (SMILES) training, use model=clm2_smiles instead — that variant
+# uses PairITCLM2 + the SMILES tokenizer and matches the shape of the molecule
+# datamodules under hydra_config/data/. Using model=clm with a molecule data
+# config will fail at _clm.py:153 with a batch-unpack error (this model
+# expects FASTA-header tuples).
+_target_: pairit.model.PairITCLM
+
+lr: 1e-3
+model_name: CLM_mini
+ckpt_path: null
+num_warmup_steps: 100
+tokenizer_dir: pmlm_tokenizer_32
+max_length: 512
+num_training_steps: ${trainer.max_steps}
+num_key_value_heads: null
+attention_bias: false
+
+# Model-specific configuration parameters
+model_kwargs:
+  embedding_layer: linear_pos 
+  hidden_act: gelu
+
+# Scheduler-specific configuration parameters
+scheduler_kwargs:
+  # Any specific scheduler parameters would go here
+  # For example:
+  # min_lr: 1e-7  # For cosine_with_min_lr scheduler

@@ -1,0 +1,91 @@
+# PairIT-Beam (inference-time compute) for TDC hERG.
+#
+#   pairit_beam_search --config-name=beam_search_herg
+#
+# Default checkpoint is the bundled hERG SFT fine-tune
+# (assets/checkpoints/pairit/tdc/herg/finetuned.ckpt). Override with
+# `"model.ckpt_path='/path/to/other.ckpt'"` (inner quotes because Lightning
+# ckpt filenames contain '=').
+#
+# Same expand -> V,I,N-filter -> prune loop as beam_search.yaml, retargeted from ZINC/logP
+# to hERG. Motivation: PairIT's hERG weakness is not validity or novelty but *relevance*
+# (18% of its top-5 trip the fragmented/large-ring filter) plus large edits (SimSeed 0.16
+# vs NFBO's 0.44). The V,I,N hard gate makes beam eligibility conditional on passing those
+# filters every round, so ineligible branches die instead of being selected at the end.
+#
+# Compute: beam_width 32 x expansions 8 x 5 rounds = 1,280 generations per seed, vs 64 for
+# the best-of-64 protocol -- 20x more inference. It is therefore NOT a like-for-like
+# comparison against the baselines; it is an upper bound on what inference-time search buys.
+# `internal/docs/tdc_vin_absolute.md` remains the matched-compute table.
+
+defaults:
+  - _self_
+  - data@datamodule: tdc_herg_knn_molecule_improvement
+
+split: test
+
+datamodule:
+  keep_original_ordering: true
+
+model:
+  _target_: pairit.model.PairITCLM2
+  ckpt_path: ${pairit_assets:checkpoints/pairit/tdc/herg/finetuned.ckpt}
+  run_name: ${extract_run_name:${model.ckpt_path}}
+  extra_name: herg_beam
+  model_name: CLM_68M
+  max_length: 300
+  transform_fn: ${datamodule.transform_fn}
+
+generation:
+  temperature: 0.5              # same as every other hERG evaluation
+  batch_size: 16
+
+beam_search:
+  # Paper protocol: 8 candidates per round, top-4 kept as next-round seeds, 3 rounds.
+  #   round 0: 1 seed  x 8 =  8 candidates
+  #   round 1: 4 beams x 8 = 32
+  #   round 2: 4 beams x 8 = 32   -> up to 72 total, i.e. matched to best-of-64.
+  # (An earlier run here used 32x8x5 ~= 444 candidates/seed -- ~7x the compute, which made
+  # beam incomparable to every other method and drove its selected molecules to 0.94
+  # similarity to the seed.)
+  beam_width: 4
+  expansions_per_candidate: 8
+  num_rounds: 3
+  vin_hard_gate: true           # the point of the run -- relevance/novelty gate each round
+  vin_fallback: valid_only      # if a round has no V,I,N candidate, fall back to valid
+  ranking_property: herg_block
+  ranking_direction: decreasing  # lower = less cardiotoxic. NOT the MoleculeNet default.
+  # hERG's oracle is a classifier, so this is a probability boundary, not the train median
+  # (1.0). Matches the absolute VIN rule used in internal/docs/tdc_vin_absolute.md.
+  improvement_threshold: 0.5
+  allow_revisit: false
+  track_lineage: true
+
+seeds:
+  max_seeds: null
+  deduplicate: true
+
+# Overlay disabled — see reference_smiles_files below for why.
+eval_config: null
+
+reference_smiles_files:
+  # Set explicitly rather than via `eval_config`: the overlay calls initialize_config_dir()
+  # from inside an already-running Hydra app and dies with "GlobalHydra is already
+  # initialized". Novelty needs BOTH sources — a molecule copied from ZINC pretraining is no
+  # more novel than one copied from the hERG training set.
+  - name: herg_train
+    path: ${pairit_assets:data/tdc/herg/train/molecules.parquet}
+    default: true
+  - name: zinc_train
+    path: ${pairit_assets:data/zinc/train/molecules.parquet}
+
+properties:
+  property_names:
+    - herg_block
+    - qed
+    - sa
+
+output:
+  dir: ${oc.env:PAIRIT_OUTPUT_ROOT,./outputs}/${model.run_name}/beam_search/${model.extra_name}/${split}/${now:%Y-%m-%d_%H-%M-%S}
+
+device: null

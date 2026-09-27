@@ -1,0 +1,19 @@
+degradation_stopping:
+  _target_: pairit.callbacks.DegradationStoppingCallback
+  monitor: val_loss  # Metric to monitor (e.g., "val_loss", "val/accuracy")
+  threshold: 0.1  # Threshold for stopping (interpretation depends on threshold_mode)
+  threshold_mode: absolute  # "absolute" for additive difference, "proportional" for multiplicative factor
+  # Examples:
+  # - absolute: threshold=0.1 means stop when current >= best + 0.1 (for loss)
+  # - proportional: threshold=0.1 means stop when current >= best * 1.1 (10% worse)
+  patience: 10  # Number of consecutive validation checks where metric is degraded before stopping
+  # Prevents stopping due to noise. Set to 1 for immediate stopping when threshold is exceeded.
+  immediate_threshold: null  # Optional: stop immediately if degradation exceeds this (must be > threshold)
+  # Example: if threshold=0.1 and immediate_threshold=0.5, stop immediately if degradation >= 0.5,
+  # otherwise require 3 consecutive checks with degradation >= 0.1
+  mode: min  # "min" for loss metrics (lower is better), "max" for accuracy metrics (higher is better)
+  min_epochs: 0  # Minimum epochs before stopping is allowed
+  min_steps: 0  # Minimum steps before stopping is allowed
+  verbose: true  # Whether to log stopping messages
+
+

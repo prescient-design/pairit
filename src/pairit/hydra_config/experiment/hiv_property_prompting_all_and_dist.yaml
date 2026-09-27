@@ -1,0 +1,26 @@
+# @package _global_
+
+# Property prompting overlay for HIV (all supported properties + HIV_active).
+#
+# Use with:
+#   pairit_train --config-name train_molecule_improvement experiment=hiv_property_prompting_all_and_dist
+
+defaults:
+  - _self_
+  - /prompting: hiv_all_props
+
+data:
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${....prompting.properties.names}
+        num_value_bins: ${....prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${....prompting.properties.delta_binning.default.num_bins}
+      add_distance_prompt_tokens: ${data.prompting.distance.enabled}
+      distance_prompt_tokens:
+        num_bins: ${data.prompting.distance.binning.num_bins}
+
+callbacks:
+  molecule_validation:
+    prompting: ${data.prompting}

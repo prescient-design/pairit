@@ -1,0 +1,5 @@
+_target_: lightning.pytorch.seed_everything
+
+# Use the top-level `seed` from the active config (so CLI overrides like `seed=123` work).
+seed: ${seed}
+workers: true

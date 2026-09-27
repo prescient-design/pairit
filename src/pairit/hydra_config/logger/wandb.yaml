@@ -1,0 +1,11 @@
+_target_: lightning.pytorch.loggers.WandbLogger
+save_dir: ${paths.output_dir}
+offline: false
+name: null
+project: null
+entity: null
+group: null
+notes: null
+tags: null
+resume: null  # Set to "must" for preemption support, null for new runs
+id: null  # W&B run ID for resumption

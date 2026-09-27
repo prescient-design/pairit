@@ -1,0 +1,3 @@
+lora_callback:
+  _target_: pairit.callbacks.LoRACallback
+  log_every_n_steps: 100

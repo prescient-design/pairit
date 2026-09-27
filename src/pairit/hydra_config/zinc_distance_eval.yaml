@@ -1,0 +1,89 @@
+# Evaluation config for distance-ONLY prompted models.
+#
+# Tests controllability: inject a chosen target distance bin (<dc><d_NN>) for EVERY seed via
+# data.prompting.distance.eval_override, generate, and measure the resulting seed->gen distance.
+# Sweep the bin (0..3) across runs to see whether generated distance tracks the prompt.
+#
+# Run (per target bin):
+#   pairit_eval --config-name=zinc_distance_eval \
+#       "model.ckpt_path='/path/to/best.ckpt'" \
+#       model.run_name=zinc_distance_only_seed0 model.extra_name=bin0 \
+#       ++datamodule.prompting.distance.eval_override.bin=0
+
+defaults:
+  # data default FIRST so this file's _self_ overrides (prompting, tokenizer) win.
+  - data@datamodule: zinc_molecule_improvement
+  - _self_
+
+datamodule:
+  keep_original_ordering: true
+  # Distance-only prompting. eval_override injects a fixed target bin for every seed,
+  # independent of the ground-truth pair — this is the controllable-generation path.
+  prompting:
+    properties:
+      enabled: false
+    distance:
+      enabled: true
+      binning:
+        mode: fixed_quartiles
+        num_bins: 4
+      source:
+        distribution_file: "distance_distributions.parquet"
+        distance_column: "morgan_tanimoto_distance"
+        is_similarity: false
+        min_pairs_per_molecule: 10
+        max_fraction_low_pairs: 0.1
+        compute_if_missing: true
+      eval_override:
+        enabled: true
+        bin: 0   # override per run: ++datamodule.prompting.distance.eval_override.bin=K
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: false
+      add_distance_prompt_tokens: true
+      distance_prompt_tokens:
+        num_bins: 4
+
+output_dir: ${oc.env:PAIRIT_OUTPUT_ROOT,./outputs}/${model.run_name}/evaluation_results/${model.extra_name}/${split}/${now:%Y-%m-%d_%H-%M-%S}
+
+split: test
+
+training_batch_size: null
+training_accumulate_grad_batches: 1
+training_num_devices: 1
+
+wandb_project: null
+wandb_entity: null
+
+model:
+  _target_: pairit.model.PairITCLM2
+  run_name: zinc_distance_only_seed0
+  extra_name: bin0
+  ckpt_path: ???   # required: path to the best checkpoint
+  model_name: CLM_68M
+  max_length: 300
+  transform_fn: ${datamodule.transform_fn}
+
+callbacks:
+  - _target_: pairit.callbacks.MoleculeValidationCallback
+    num_unconditional_generations: 0
+    num_conditional_generations: 1e9   # all test seeds
+    save_dir: ${output_dir}/generated_molecules
+    max_samples_to_save: 1e9
+    reference_smiles_files:
+      - name: zinc_train
+        path: ${pairit_assets:data/zinc/train/molecules.parquet}
+        default: true
+    expensive_metrics_to_compute: ["memorization"]
+    temperature: 0.5
+    save_pdfs: false
+    num_generations_per_seed: 5
+    visualization_property_name: "logp"
+    property_names: ["logp"]
+    utility_key: logp
+    # Forward the (distance) prompting config so the callback parses <d_NN> + computes agreement.
+    prompting: ${datamodule.prompting}
+    # Export pairit CSV for downstream analysis.
+    export_pairit_csv: true
+    pairit_method_name: "lobster_distance"
+    pairit_dataset_name: "zinc250k"

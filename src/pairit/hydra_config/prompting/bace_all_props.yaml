@@ -1,0 +1,18 @@
+# @package data.prompting
+
+defaults:
+  - zinc_all_props
+  - _self_
+
+properties:
+  # BACE extends the ZINC "all props" set with a classification target.
+  names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "Class"]
+  source:
+    # Some BACE parquets store Class under a model/oracle prediction column.
+    fallback_column_map: {Class: "bace_b_oracle_pred"}
+
+distance:
+  source:
+    # BACE pairs files store similarity instead of distance.
+    distance_column: "similarity"
+    is_similarity: true

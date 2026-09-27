@@ -1,0 +1,70 @@
+# @package _global_
+
+defaults:
+  - override /data: zinc_molecule_improvement
+  - override /model: clm2_smiles
+  - override /callbacks: molecule_improvement
+  - _self_
+
+# Small sanity run; override as needed.
+trainer:
+  max_epochs: 1
+  limit_train_batches: 50
+  limit_val_batches: 5
+
+# Enable property prompt tokens in the tokenizer.
+data:
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        # NOTE: prompting is configured under `data.prompting`, so we need to go up to `data` from here.
+        property_names: ${....prompting.properties.names}
+        num_value_bins: ${....prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${....prompting.properties.delta_binning.default.num_bins}
+
+  # Property prompting config consumed by MoleculeImprovementDataset.
+  prompting:
+    properties:
+      enabled: true
+      names: ["logp", "tpsa"]
+      selection:
+        mode: all   # options: random_one | random_k | all
+        k: 1
+        seed: 0
+      include:
+        type: true
+        start_value: bin   # off | bin
+        direction: true
+        magnitude: bin     # off | bin
+      source:
+        prefer_columns: true
+        compute_if_missing: true
+        column_map: {}
+      value_binning:
+        mode: fixed
+        default:
+          num_bins: 32
+          range: null
+        per_property:
+          logp:
+            range: [-2.0, 6.0]
+          tpsa:
+            range: [0.0, 200.0]
+      delta_binning:
+        mode: fixed
+        default:
+          num_bins: 16
+          range: null
+        per_property:
+          logp:
+            range: [0.0, 3.0]
+          tpsa:
+            range: [0.0, 100.0]
+
+# Wire prompting into molecule validation so saved samples include prompt_summary + prompted property values.
+callbacks:
+  molecule_validation:
+    prompting: ${data.prompting}
+
+

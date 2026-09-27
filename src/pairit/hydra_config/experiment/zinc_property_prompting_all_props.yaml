@@ -1,0 +1,52 @@
+# @package _global_
+
+# Property prompting overlay (all supported properties for MoleculeImprovementDataset).
+#
+# Use with:
+#   pairit_train --config-name train_molecule_improvement experiment=zinc_property_prompting_all_props
+#
+# Notes:
+# - Token strings must exist in tokenizer vocab, so we enable add_property_prompt_tokens and
+#   derive tokenization settings from the single source of truth `data.prompting.properties.*`.
+# - The dataset-side prompt builder currently supports:
+#   logp, qed, sa, mw, tpsa, hbd, hba, rotatable_bonds, frac_sp3_c
+#   Class (BACE) - requires "Class" column in parquet files (prefer_columns: true)
+
+defaults:
+  - _self_
+  - /prompting: zinc_all_props
+
+data:
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        # `prompting` lives under `data`, so go up to `data` from here.
+        property_names: ${....prompting.properties.names}
+        num_value_bins: ${....prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${....prompting.properties.delta_binning.default.num_bins}
+      # Distance prompt tokens (only if distance prompting is enabled)
+      add_distance_prompt_tokens: ${....prompting.distance.enabled}
+      distance_prompt_tokens:
+        num_bins: ${....prompting.distance.binning.num_bins}  # Only used in curve_fit mode
+
+prompting:
+    # Enable distance prompting for BACE dataset
+    distance:
+      enabled: true
+      binning:
+        mode: curve_fit  # curve_fit | fixed_quartiles
+        num_bins: 20  # Number of bins (used when mode=curve_fit)
+      source:
+        distribution_file: "distance_distributions.parquet"  # Relative to data root
+        distance_column: "morgan_tanimoto_distance"  # Column name in pairs file
+        min_pairs_per_molecule: 10  # Minimum pairs required per molecule_a
+        max_fraction_low_pairs: 0.1  # Fail if >10% of molecules have < min_pairs
+        compute_if_missing: true  # Compute distributions if file doesn't exist
+
+callbacks:
+  molecule_validation:
+    # Ensure saved samples log prompt_summary + computed properties for the prompted properties.
+    prompting: ${data.prompting}
+
+

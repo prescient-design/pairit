@@ -1,0 +1,46 @@
+defaults:
+  - transform_fn: smiles_tokenizer_transform
+  - /data@components.zinc: zinc_molecule_improvement
+  - /data@components.bace: bace_both_molecule_improvement
+  - _self_
+
+_target_: pairit.data.MixedMoleculeImprovementDataModule
+
+transform_fn:
+  tokenizer:
+    add_dataset_tokens: true
+    max_dataset_id: 8
+
+components:
+  zinc:
+    dataset_id: 0
+    transform_fn: ${...transform_fn}
+    use_dataset_identity_prompt: true
+    epsilon: 1
+  bace:
+    dataset_id: 1
+    transform_fn: ${...transform_fn}
+    use_dataset_identity_prompt: true
+    epsilon: 0.5
+
+train_fractions:
+  zinc: 1.0
+  bace: 1.0
+train_max_samples:
+  zinc: null
+  bace: null
+
+val_fractions:
+  zinc: 1.0
+  bace: 1.0
+val_max_samples:
+  zinc: null
+  bace: null
+
+seed: 0
+val_seed: ${.seed}
+batch_size: 64
+shuffle: true
+num_workers: 4
+pin_memory: true
+drop_last: true

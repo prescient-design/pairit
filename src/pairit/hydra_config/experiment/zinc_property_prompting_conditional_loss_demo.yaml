@@ -1,0 +1,65 @@
+# @package _global_
+
+defaults:
+  - override /data: zinc_molecule_improvement
+  - override /model: clm2_smiles_conditional
+  - override /callbacks: molecule_improvement
+  - _self_
+
+trainer:
+  max_epochs: 1
+  limit_train_batches: 50
+  limit_val_batches: 5
+
+data:
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${....prompting.properties.names}
+        num_value_bins: ${....prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${....prompting.properties.delta_binning.default.num_bins}
+
+  prompting:
+    properties:
+      enabled: true
+      names: ["logp", "tpsa"]
+      selection:
+        mode: all
+        k: 1
+        seed: 0
+      include:
+        type: true
+        start_value: bin
+        direction: true
+        magnitude: bin
+      source:
+        prefer_columns: true
+        compute_if_missing: true
+        column_map: {}
+      value_binning:
+        mode: fixed
+        default:
+          num_bins: 32
+          range: null
+        per_property:
+          logp:
+            range: [-2.0, 6.0]
+          tpsa:
+            range: [0.0, 200.0]
+      delta_binning:
+        mode: fixed
+        default:
+          num_bins: 16
+          range: null
+        per_property:
+          logp:
+            range: [0.0, 3.0]
+          tpsa:
+            range: [0.0, 100.0]
+
+callbacks:
+  molecule_validation:
+    prompting: ${data.prompting}
+
+

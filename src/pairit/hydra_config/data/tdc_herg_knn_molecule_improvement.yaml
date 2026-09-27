@@ -1,0 +1,68 @@
+# TDC hERG - Tanimoto k-nearest-neighbour pairs (k=10).
+#
+# Target: `herg_block` (alias of `Y`) = binary hERG blocker label (1 = blocker / cardiotoxic). Lower is safer, so the
+# model learns blocker -> non-blocker. This is the OPPOSITE direction to
+# BACE/BBBP/HIV - do not copy their configs' utility_direction.
+#
+# Pair construction: each molecule is joined to its 10 nearest neighbours by
+# Morgan/ECFP4 Tanimoto within its own split, so EVERY molecule appears in at least
+# one pair (100% coverage) - unlike MMP (40-76%) or a fixed >0.4 similarity cutoff.
+# Built by scripts/build_tanimoto_knn_pairs.py --k 10 --drop-disconnected.
+# Multi-component (salt / counterion) records were dropped before pairing.
+#
+# Scale: 414/60/111 molecules and 2865/415/764 pairs (train/valid/test), before
+# epsilon filtering. Small - intended for finetuning from a ZINC checkpoint.
+
+defaults:
+  - _self_
+  - transform_fn: smiles_tokenizer_transform
+
+_target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
+
+root: "${pairit_assets:data/tdc/herg}"
+molecule_filename: "train/molecules.parquet"
+val_molecule_filename: "valid/molecules.parquet"
+test_molecule_filename: "test/molecules.parquet"
+train_pair_filename: "train/pairs.parquet"
+val_pair_filename: "valid/pairs.parquet"
+test_pair_filename: "test/pairs.parquet"
+
+# Utility selection
+utility_key: "herg_block"
+# Set to "herg_block_oracle_pred" only if oracle predictions are ever written into the
+# molecule parquets. Every molecule here is real with a measured Y, so no fallback.
+utility_key_fallback: null
+
+# Filtering
+shape_tanimoto_percentile: null
+shape_tanimoto_num_pairs: null
+delta: null
+# binary target: any epsilon in (0, 1] selects exactly the label-flipping pairs,
+# and is identical to utility_threshold=1.0.
+epsilon: 0.5
+
+# Threshold crossing (alternative to epsilon; set epsilon: 0 to isolate it). When
+# set, only pairs straddling this value are kept, so the improved molecule must land
+# past an absolute bar. 1.0 is the train median and matches the DDSBM baseline
+# protocol. null = disabled.
+utility_threshold: null
+
+# Distance column present as `morgan_tanimoto_distance` (= 1 - similarity);
+# only read for delta filtering or distance prompting, both off here.
+distance_type: null
+
+use_cache: false
+just_first: false
+keep_original_ordering: false
+
+batch_size: 64
+shuffle: true
+num_workers: 4
+pin_memory: true
+drop_last: false
+max_train_samples: null
+
+utility_direction: "decreasing"
+
+debug_remix_splits: false
+debug_remix_seed: 42

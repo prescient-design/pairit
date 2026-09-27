@@ -1,0 +1,12 @@
+defaults:
+  - base.yaml
+  - molecule_validation.yaml
+  - degradation_stopping.yaml
+  - _self_
+
+# This configuration is specific to molecule improvement tasks
+# It extends the base callbacks with molecule validation capabilities
+
+unique_molecule_tracker:
+  _target_: pairit.callbacks.UniqueMoleculeTracker
+  log_every_n_steps: 50 

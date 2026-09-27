@@ -1,0 +1,106 @@
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+*.egg
+*.egg-info
+*.egg-info/
+*.py[cod]
+*.so
+*.parquet
+*.npy
+*~
+.cache
+.hypothesis
+.idea
+.tox
+.vs
+.vscode
+.DS_Store
+/dist
+__pycache__
+_skbuild
+build
+cmake-build-debug
+docs/_build
+*.err
+*.out
+*.csv
+# ...but the published tables' machine-readable form must survive. These are small
+# text files that ARE the paper's numbers; hiding them made the tables unreproducible.
+!docs/**/*.csv
+
+# scripts/ holds the analysis code AND its run detritus. The rule was `scripts/*`,
+# which hid 416 of 458 files -- every RL launcher, every pretraining script, both
+# dataset builders named in CLAUDE.md, and moleculenet_realonly_evaluation.py, the
+# source of published Table 1. Ignore the OUTPUT, keep the CODE.
+scripts/outputs/
+scripts/outfiles/
+scripts/evaluation_results/
+scripts/generated_molecules/
+scripts/lightning_logs/
+scripts/__pycache__/
+scripts/$DATA_DIR/
+scripts/*.log
+scripts/*.swp
+scripts/*.swo
+scripts/*.bak
+scripts/*.out
+scripts/*.fasta
+scripts/fastas/*.fasta
+scripts/combined_db*
+*_play.py
+# Keep experiment configs versioned (they're part of the training interface).
+# If you need local-only experiments, add a more specific ignore for your files.
+# src/pairit/hydra_config/experiment/*
+src/pairit/mcp/claude_desktop_config.json
+
+notebooks/nathan/*
+notebooks/karina/*
+
+models/*
+
+dev
+outputs
+wandb
+lightning_logs
+
+.env
+dev
+
+*.ckpt
+
+# DGEB evaluation results and test reports
+*.log
+dgeb_results/
+dgeb_test_results/
+dgeb_mock_results/
+*_dgeb_eval/
+evaluation_report.md
+results_summary.json
+
+# DXT extensions (large binary files)
+test_dxt/*
+*.dxt
+.venv_test/
+
+# large analysis archives — do not commit
+*.tar.gz
+
+# SLURM run artifacts — never commit
+runs/
+notebooks/runs/
+
+# The monorepo root .gitignore has a blanket `*.json` rule. These JSON files are
+# load-bearing: the tokenizer assets are read at runtime by pairit.tokenization, and
+# the docs/ records are the machine-readable form of published numbers.
+!src/pairit/assets/**/*.json
+!docs/**/*.json
+
+# Personal research notes — never committed (per global agent instructions).
+lab_notebook/
+
+# Internal-notes docs — kept locally for reproducibility but not tracked
+# (unless explicitly re-added). Data files (.tsv, .csv, .txt) remain
+# tracked because they are the paper's published numbers.
+docs/**/*.md
+docs/**/*.yaml
+docs/**/*.json

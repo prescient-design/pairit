@@ -1,0 +1,88 @@
+# Iterative molecule generation configuration
+# Iteratively applies a model to seed molecules, scores generations by a property,
+# selects top-k molecules PER SEED, and repeats for N rounds.
+#
+# To run:
+# pairit_iterative_gen model.ckpt_path=/path/to/checkpoint.ckpt
+
+defaults:
+  - _self_
+  - data@datamodule: zinc_molecule_improvement
+
+# RNG seed for reproducible inference (#37). Seeds torch/numpy/python-random at
+# entry-point time via lightning.seed_everything, so per-SMILES output is stable
+# across identical inputs. Override on the command line for seed-variation runs.
+seed: 42
+
+# Split to use for seed molecules
+split: test
+
+# Datamodule overrides (seeds come from first molecule in pairs)
+datamodule:
+  keep_original_ordering: true
+
+# Model configuration
+model:
+  _target_: pairit.model.PairITCLM2
+  ckpt_path: ???  # Required: path to model checkpoint
+  run_name: ${extract_run_name:${model.ckpt_path}}
+  extra_name: best_val
+  model_name: CLM_68M
+  max_length: 300
+  transform_fn: ${datamodule.transform_fn}
+
+# Generation parameters
+generation:
+  num_rounds: 5           # Number of iterative rounds
+  num_generations_per_seed: 10  # Generations per seed molecule
+  temperature: 0.95       # Sampling temperature
+  max_new_tokens: 400     # Maximum tokens to generate
+  batch_size: 8           # Batch size for generation (to avoid OOM)
+
+# Selection parameters (selection happens PER SEED)
+selection:
+  top_k: 1                # Number of molecules to select PER SEED for next round
+  property_name: qed      # Property to optimize (from PROPERTY_REGISTRY)
+  direction: increasing   # 'increasing' (higher is better) or 'decreasing' (lower is better)
+  deduplicate: true       # Remove duplicate SMILES before selection
+  require_valid: true     # Only select valid molecules
+  prioritize_novel: false # If true, prefer non-memorized molecules (requires reference_smiles_files)
+
+# Seed extraction from datamodule
+seeds:
+  max_seeds: null         # Limit number of initial seeds (null = use all from split)
+  deduplicate: true       # Remove duplicate seed SMILES
+
+# Reference SMILES files for memorization checking
+# Same format as molecule_validation callback
+# Example:
+#   reference_smiles_files:
+#     - name: zinc_train
+#       path: /path/to/zinc_train.parquet
+#       default: true
+#     - name: bace_train
+#       path: /path/to/bace_train.parquet
+reference_smiles_files: []
+smiles_column: smiles     # Column name for SMILES in reference files
+
+# Distance computation
+distance:
+  compute: true           # Whether to compute Tanimoto distances to seeds
+  type: tanimoto          # Distance type (currently only tanimoto supported)
+
+# Output configuration
+output:
+  dir: ${oc.env:PAIRIT_OUTPUT_ROOT,./outputs}/${model.run_name}/iterative_generate/${model.extra_name}/${split}/${now:%Y-%m-%d_%H-%M-%S}
+  filename: results.parquet
+  save_per_round: false   # Whether to also save per-round parquet files
+
+# Properties to compute (beyond the optimization property)
+properties:
+  compute_all: false      # If true, compute all registered properties
+  property_names:         # List of specific properties to compute
+    - logp
+    - qed
+    - sa
+
+# Device configuration
+device: null  # null = auto-detect (cuda if available, else cpu)

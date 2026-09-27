@@ -1,0 +1,98 @@
+first_molecule_perplexity:
+  _target_: pairit.callbacks.FirstMoleculePerplexityCallback 
+  
+molecule_validation:
+  _target_: pairit.callbacks.MoleculeValidationCallback
+  num_unconditional_generations: 0  # Number of UNCONDITIONAL molecules to generate per epoch
+  num_conditional_generations: 64  # Number of CONDITIONAL molecules per epoch
+  num_conditional_metric_samples: null  # Subset for full metric computation (null = same as num_conditional_generations)
+  # Example: Set to 10 to only compute conditional metrics on 10 molecules (useful for speed)
+  save_generated_samples: true  # Whether to save generated molecules to disk
+  max_samples_to_save: 50  # Target number of samples to save (fraction computed automatically)
+  save_dir: ${paths.root_dir}/generated_molecules
+  
+  # Distance metrics (optional)
+  # neighbor_provider: null  # Optional callable to provide neighbor molecules
+  # distance_fn: null  # Optional distance function (defaults to Tanimoto)
+  distance_name: "tanimoto"  # Name of distance metric for logging
+  
+  # Property specifications (optional - defaults to LogP, QED, SA)
+  # Can use either property_specs (for custom PropertySpec objects) or property_names (for predefined properties)
+  # property_specs: null  # List of PropertySpec objects (null = use defaults)
+  property_names: ["logp", "qed", "sa"]  # Simpler alternative: list of property names
+  # Available: "logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds"
+  # Example for Lipinski properties: ["mw", "tpsa", "hbd", "hba"]
+  visualization_property_name: "logp"  # Property to use for visualization annotations (default: logp)
+  
+  # Unified reference sets (preferred)
+  # Each entry is used for:
+  # - membership metrics (memorization/novelty): canonical SMILES set
+  # - distribution comparison metrics (SNN/FCD/etc): raw SMILES pool
+  #
+  # Example:
+  #   reference_smiles_files:
+  #     - {name: train, path: /path/to/train.parquet, default: true}
+  #     - {name: refA, files: [/path/a.parquet, /path/b.parquet]}
+  reference_smiles_files: null
+  #
+  # --- Deprecated legacy knobs (kept for backward compatibility; default to null) ---
+  training_smiles_file: null  # Deprecated; prefer reference_smiles_files. should remove from everywhere
+  reference_smiles_file: null  # Deprecated; prefer reference_smiles_files. should remove from everywhere
+  memorization_reference_smiles_files: null  # Deprecated; prefer reference_smiles_files (note the s)
+  smiles_column: "smiles"  # Column name containing SMILES strings in parquet files
+  split_column: "split"  # Column name for split info (set to null to load all rows)
+  training_split_value: "train"  # Value in split_column to filter for (e.g., "train")
+  
+  # Alternative: pass SMILES directly (not recommended for large datasets)
+  # these are legacy, at this point! should remove from everywhere
+  training_smiles_canonical: null  # List of canonical SMILES (only for small datasets)
+  reference_smiles_for_unconditional: null  # List of reference SMILES (only for small datasets)
+
+
+
+  # Note: If both file and list are provided, file takes precedence
+  # Note: If reference is null, falls back to training set
+  # Note: If all are null, dataset-level metrics (SNN, FCD, fragment similarity, etc.) are skipped
+  
+  # FCD (Fréchet ChemNet Distance) settings
+  fcd_min_required: 10  # Minimum number of valid molecules required to compute FCD (expensive metric)
+  
+  # Expensive metrics configuration
+  # Available: "snn", "fcd", "internal_diversity", "fragment_scaffold", "w1_kde", "memorization"
+  expensive_metrics_to_compute: []  # Empty list = skip all expensive metrics (faster validation)
+  # Example for comprehensive evaluation: ["snn", "internal_diversity", "fragment_scaffold"]
+  # Note: "snn" also enables per-molecule SNN saving during generation
+  # Note: "memorization" checks if generated molecules exactly match training set (for detecting memorization)
+  
+  check_memorization_from_any_reference: true  # Whether to check memorization from any reference set
+
+  # Generation parameters
+  temperature: 0.95  # Sampling temperature (0.7 = more deterministic, 1.0 = more random)
+  save_pdfs: false  # Whether to save PDF visualizations (memory-intensive, disabled by default)
+  num_generations_per_seed: 1  # Number of molecules to generate per conditioning molecule (conditional only)
+
+  # --- Mixed dataset support ---
+  # If you return multiple validation dataloaders (one per dataset), set only_dataloader_idx
+  # and metric_prefix for each callback instance so metrics don't collide.
+  metric_prefix: null
+  only_dataloader_idx: null
+  # For per-dataset unconditional metrics, set a dataset prompt (text after <cls>), e.g. "<ds><ds_0>"
+  unconditional_prompt_text: null
+
+  # Automatically split logged metrics by dataset when multiple validation dataloaders are present.
+  # - "auto": split only if there are multiple val loaders (default; preserves single-dataset naming)
+  # - "on": always split (even for single val loader)
+  # - "off": never split
+  split_metrics_by_dataset: "auto"
+
+  # If true (and split_metrics_by_dataset resolves to enabled), run unconditional generation
+  # separately per dataset (more expensive). If false, unconditional generation runs once (unchanged).
+  unconditional_per_dataset: false
+  # pairit_eval CSV export (enable to auto-trigger pairit_eval post-processing)
+  export_pairit_csv: false
+  pairit_method_name: pairit
+  pairit_dataset_name: null
+  pairit_seed_label_column: null
+
+  # Optional: property prompting config (if provided, overrides property_names for logging)
+  prompting: null

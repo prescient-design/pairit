@@ -1,0 +1,57 @@
+# Evaluation config for the TDC hERG Tanimoto-kNN pairs.
+#
+# Generates conditionally from every test-split seed at temperature 0.5 (the project
+# standard), exports PairIT CSVs, and runs pairit_eval to compute V,I,N and diversity.
+#
+# Memorisation is checked against BOTH training sources -- the hERG finetuning data
+# and the ZINC pretraining corpus -- since a molecule copied from either is not novel.
+
+defaults:
+  - pair_evaluate
+  - _self_
+  - override data@datamodule: tdc_herg_knn_molecule_improvement
+
+split: test
+
+datamodule:
+  batch_size: 64
+
+model:
+  ckpt_path: ${pairit_assets:checkpoints/pairit/tdc/herg/finetuned.ckpt}
+
+callbacks:
+  - _target_: pairit.callbacks.MoleculeValidationCallback
+    num_unconditional_generations: 0
+    num_conditional_generations: 1e9      # every seed in the split
+    num_generations_per_seed: 5
+    temperature: 0.5                       # project standard for evaluation
+    save_dir: ${output_dir}/generated_molecules
+    max_samples_to_save: 1e9
+    save_pdfs: false
+    visualization_property_name: herg_block
+    property_names: [herg_block]
+    utility_key: ${datamodule.utility_key}
+    utility_direction: ${datamodule.utility_direction}
+    expensive_metrics_to_compute: ["memorization", "internal_diversity", "snn", "fragment_scaffold"]
+    reference_smiles_files:
+      - name: herg_train
+        path: ${pairit_assets:data/tdc/herg/train/molecules.parquet}
+        default: true
+      - name: zinc_train
+        path: ${pairit_assets:data/zinc/train/molecules.parquet}
+    export_pairit_csv: true
+    pairit_method_name: pairit
+    pairit_dataset_name: herg
+
+pairit_eval:
+  enabled: true
+  dataset: herg
+  property_metrics: true
+  property_names: "herg_block"
+  distribution: true        # FCD / SNN / internal diversity
+  save: true
+  # Novelty needs the training SMILES. Without these pairit_eval reports novel=0 and
+  # the ZINC pretraining corpus is no more novel than one copied from hERG.
+  extra_train_smiles:
+    herg_train: ${pairit_assets:data/tdc/herg/train/molecules.parquet}
+    zinc_train: ${pairit_assets:data/zinc/train/molecules.parquet}

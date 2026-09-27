@@ -1,0 +1,69 @@
+# Model evaluation configuration
+# To run:
+
+# pairit_eval model.model_path=path_to_your_checkpoint.ckpt
+
+defaults:
+  - _self_
+  - data@datamodule: molecule_improvement
+#  - model: clm2_smiles
+
+output_dir: ${hydra:runtime.cwd}/evaluation_results/${model.run_name}/${model.extra_name}/${split}/${now:%Y-%m-%d_%H-%M-%S}
+
+split: val
+
+# datamodule:
+#   _target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
+#   tokenizer_max_length: 1024 #8192 # shouldn't this come from elsewhere??
+
+# Training info for computing datapoints seen (extracted from checkpoint + config)
+training_batch_size: null  # Set to override datamodule.batch_size for datapoints calculation
+training_accumulate_grad_batches: 1
+training_num_devices: 1
+
+# Optional wandb logging for evaluation results
+wandb_project: null  # Set to enable wandb logging (e.g., "pairit")
+wandb_entity: null
+
+model:
+  _target_: pairit.model.PairITCLM2 #pairit.model.UME # is model_name needed?
+  run_name: from_scratch_600
+  extra_name: last_ckpt
+  # No default — every derived config (bace_real_pair_evaluate, zinc_pair_evaluate,
+  # tdc_herg_knn_evaluate, ...) overrides this with the bundled checkpoint under
+  # ${pairit_assets:checkpoints/pairit/...}. Override on the CLI to point at a custom
+  # checkpoint; wrap the path in inner single quotes because Lightning ckpt filenames
+  # contain '=' which Hydra otherwise treats as further overrides.
+  ckpt_path: ???
+  model_name: CLM_150M
+  max_length: 1024 #512
+  transform_fn: ${datamodule.transform_fn}
+  # are other arguments needed? if not will use the defaults. e.g. use model_name?
+
+callbacks:
+  - _target_: pairit.callbacks.FirstMoleculePerplexityCallback 
+    # max_length: ${datamodule.tokenizer_max_length}
+    # batch_size: 8
+  
+  - _target_: pairit.callbacks.MoleculeValidationCallback
+    num_unconditional_generations: 64  # Number of molecules to generate for validity checking
+    save_dir: ${output_dir}/generated_molecules
+    max_samples_to_save: 64 #num_validation_generations
+    export_pairit_csv: true
+    pairit_method_name: pairit
+    pairit_dataset_name: null  # Override per-config (e.g. "bace", "zinc250k")
+    pairit_seed_label_column: null  # Override for binary datasets (e.g. "Class", "p_np", "HIV_active")
+
+# pairit_eval post-processing (runs automatically after CSV export)
+pairit_eval:
+  enabled: true
+  # pairit_eval library (Hannah's metrics package). Override the two paths if you
+  # cloned it elsewhere; the code will otherwise auto-discover via the pairit_eval
+  # module import if these are null.
+  script_path: null
+  config_dir: null
+  dataset: null  # Override per-config (e.g. "bace", "zinc250k")
+  property_metrics: true
+  property_names: null  # Auto-derived from callback's property_names if null
+  save: true
+

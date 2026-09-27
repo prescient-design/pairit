@@ -1,0 +1,6 @@
+# Ignore all bundled data — copied locally, published separately via Hugging Face.
+# Only the README and this .gitignore are tracked in git.
+# See README.md for source paths and download instructions.
+*
+!.gitignore
+!README.md

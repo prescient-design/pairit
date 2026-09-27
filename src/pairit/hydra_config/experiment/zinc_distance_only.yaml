@@ -1,0 +1,59 @@
+# @package _global_
+#
+# Distance-only prompting overlay for ZINC.
+#
+# Trains a CLM to follow a *desired structural distance* prompt (<dc><d_NN>) with NO
+# property tokens, so we can isolate the question "does similarity/distance prompting
+# actually work?" from any property-conditioning confounds.
+#
+# Use with:
+#   pairit_train --config-name train_molecule_improvement \
+#       experiment=zinc_distance_only data=zinc_molecule_improvement
+#
+# Notes:
+# - Distance bins use fixed_quartiles (4 bins): near / somewhat-near / somewhat-far / far,
+#   computed per molecule_a from its pair-distance distribution.
+# - Property prompting is fully disabled (no <p_*> tokens added to the vocab).
+# - At inference, set data.prompting.distance.eval_override.{enabled=true,bin=K} to inject
+#   a chosen target bin for every seed (see scripts/zinc_distance_eval_sweep.sh).
+
+defaults:
+  # Load the base prompting config FIRST, then let this file's overrides (_self_) win.
+  # If _self_ came first, the /prompting default would clobber our data.prompting overrides.
+  - /prompting: zinc_all_props
+  - _self_
+
+# IMPORTANT: all prompting overrides live under `data:` so they merge into
+# `data.prompting` (where the `/prompting: zinc_all_props` default places them and where
+# the datamodule reads from). A top-level `prompting:` block would land at the GLOBAL
+# `prompting` node — which the datamodule does NOT read — silently leaving properties on
+# and distance off. (The older *_all_props experiments have that latent bug.)
+data:
+  transform_fn:
+    tokenizer:
+      # No property prompt tokens for a distance-only model.
+      add_property_prompt_tokens: false
+      # Distance prompt tokens: <dc>, <d_00>..<d_03> for 4-bin fixed_quartiles.
+      add_distance_prompt_tokens: ${...prompting.distance.enabled}
+      distance_prompt_tokens:
+        num_bins: ${....prompting.distance.binning.num_bins}
+  prompting:
+    properties:
+      enabled: false  # distance-only: no property conditioning
+    distance:
+      enabled: true
+      binning:
+        mode: fixed_quartiles  # 4 coarse bins (num_bins still sizes the <d_NN> token set)
+        num_bins: 4            # creates <d_00>..<d_03>
+      source:
+        distribution_file: "distance_distributions.parquet"  # relative to data root
+        distance_column: "morgan_tanimoto_distance"
+        is_similarity: false
+        min_pairs_per_molecule: 10
+        max_fraction_low_pairs: 0.1
+        compute_if_missing: true
+
+callbacks:
+  molecule_validation:
+    # Forward prompting config so the callback can parse distance bins + compute agreement.
+    prompting: ${data.prompting}

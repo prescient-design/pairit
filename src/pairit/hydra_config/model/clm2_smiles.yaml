@@ -1,0 +1,26 @@
+_target_: pairit.model.PairITCLM2
+
+# this is basically the same as clm2_smiles.yaml, don't need both - JK num_validation_generations is different
+
+# Model parameters
+model_name: "CLM_150M"  # Start with smaller model for faster training
+lr: 1e-4  # Lower learning rate for finetuning
+max_length: 1024 #512
+ckpt_path: null  # Path to pretrained model if available
+
+# Training parameters
+num_training_steps: ${trainer.max_steps}
+num_warmup_steps: 1000
+
+# Tokenizer configuration - use SMILES tokenizer instead of protein tokenizer
+tokenizer_dir: "smiles_tokenizer"  # SMILES tokenizer (see src/pairit/assets/smiles_tokenizer/)
+transform_fn: ${data.transform_fn}
+
+# Model-specific configuration parameters
+model_kwargs:
+  embedding_layer: linear_pos 
+  hidden_act: gelu
+
+# Scheduler-specific configuration parameters
+scheduler_kwargs:
+  # Any specific scheduler parameters would go here 

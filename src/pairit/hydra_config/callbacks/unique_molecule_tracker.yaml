@@ -1,0 +1,3 @@
+unique_molecule_tracker:
+  _target_: pairit.callbacks.UniqueMoleculeTracker
+  log_every_n_steps: 50

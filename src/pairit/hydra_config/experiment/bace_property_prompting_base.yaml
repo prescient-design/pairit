@@ -1,0 +1,30 @@
+# @package _global_
+
+# Base property prompting config for BACE experiments
+# This config can be overridden with different prompting configs
+
+defaults:
+  - _self_
+  - /prompting: bace_all_props #zinc_all_props  # Will be overridden
+
+data:
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${....prompting.properties.names}
+        num_value_bins: ${....prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${....prompting.properties.delta_binning.default.num_bins}
+      add_distance_prompt_tokens: ${data.prompting.distance.enabled}
+      distance_prompt_tokens:
+        num_bins: ${data.prompting.distance.binning.num_bins}
+
+callbacks:
+  molecule_validation:
+    prompting: ${data.prompting}
+    visualization_property_name: "Class"
+    property_names: ["Class"]
+    expensive_metrics_to_compute: ["memorization"]
+
+
+

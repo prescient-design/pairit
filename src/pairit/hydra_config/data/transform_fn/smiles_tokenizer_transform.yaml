@@ -1,0 +1,18 @@
+_target_: pairit.transforms.TokenizerTransform
+
+tokenizer:
+  _target_: pairit.tokenization.SmilesTokenizer2Fast
+  # When using mixed datasets with dataset-identity prompting, enable these.
+  # Tokens are appended to the vocab (no overlap) so old checkpoints remain usable
+  # after embedding resize/padding on load.
+  add_dataset_tokens: false
+  max_dataset_id: null
+  # Property-prompt tokens (optional). These are appended to the vocab (no overlap).
+  add_property_prompt_tokens: false
+  property_prompt_tokens: null
+  # Distance-prompt tokens (optional). These are appended to the vocab (no overlap).
+  add_distance_prompt_tokens: false
+  distance_prompt_tokens: null
+padding: "max_length"
+truncation: True
+max_length: ${model.max_length}

@@ -1,0 +1,75 @@
+# Model evaluation configuration with prompting enabled
+# Extends bace_real_pair_evaluate with bace_all_props prompting settings
+#
+# To run:
+# pairit_eval --config-name=bace_real_pair_evaluate_prompting model.ckpt_path=path_to_checkpoint.ckpt
+
+defaults:
+  - bace_real_pair_evaluate
+  - _self_
+
+# Prompting settings (from bace_all_props / zinc_all_props)
+datamodule:
+  prompting:
+    properties:
+      enabled: true
+      names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "Class"]
+      selection:
+        mode: all
+        k: 1
+        seed: 0
+      include:
+        type: true
+        start_value: bin
+        direction: true
+        magnitude: bin
+      randomize_tokens: false
+      source:
+        prefer_columns: true
+        compute_if_missing: true
+        column_map: {}
+        fallback_column_map: {Class: "bace_b_oracle_pred"}
+      value_binning:
+        mode: fixed
+        default:
+          num_bins: 32
+          range: null
+        per_property:
+          logp: {range: [-2.0, 6.0]}
+          qed: {range: [0.0, 1.0]}
+          sa: {range: [1.0, 10.0]}
+          mw: {range: [100.0, 700.0]}
+          tpsa: {range: [0.0, 200.0]}
+          hbd: {range: [0.0, 10.0]}
+          hba: {range: [0.0, 20.0]}
+          rotatable_bonds: {range: [0.0, 20.0]}
+          frac_sp3_c: {range: [0.0, 1.0]}
+          Class: {range: [0.0, 1.0]}
+      delta_binning:
+        mode: fixed
+        default:
+          num_bins: 16
+          range: null
+        per_property:
+          logp: {range: [0.0, 3.0]}
+          qed: {range: [0.0, 0.5]}
+          sa: {range: [0.0, 5.0]}
+          mw: {range: [0.0, 300.0]}
+          tpsa: {range: [0.0, 100.0]}
+          hbd: {range: [0.0, 10.0]}
+          hba: {range: [0.0, 20.0]}
+          rotatable_bonds: {range: [0.0, 20.0]}
+          frac_sp3_c: {range: [0.0, 1.0]}
+          Class: {range: [0.0, 1.0]}
+    distance:
+      enabled: false
+      source:
+        distance_column: "similarity"
+        is_similarity: true
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "Class"]
+        num_value_bins: 32
+        num_delta_bins: 16

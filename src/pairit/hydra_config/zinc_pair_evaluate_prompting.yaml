@@ -1,0 +1,28 @@
+# Model evaluation configuration with prompting enabled
+# Extends zinc_pair_evaluate with zinc_all_props prompting settings
+#
+# Prompting ranges are inherited from prompting/zinc_all_props.yaml (single
+# source of truth shared with the training experiment config).
+#
+# To run:
+# pairit_eval --config-name=zinc_pair_evaluate_prompting model.ckpt_path=path_to_checkpoint.ckpt
+
+defaults:
+  - zinc_pair_evaluate
+  # Re-package zinc_all_props from data.prompting → datamodule.prompting
+  # so ranges stay in sync with training without duplication.
+  - /prompting@datamodule.prompting: zinc_all_props
+  - _self_
+
+datamodule:
+  prompting:
+    # Eval-specific overrides (zinc_all_props enables distance; eval disables it)
+    distance:
+      enabled: false
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${datamodule.prompting.properties.names}
+        num_value_bins: ${datamodule.prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${datamodule.prompting.properties.delta_binning.default.num_bins}

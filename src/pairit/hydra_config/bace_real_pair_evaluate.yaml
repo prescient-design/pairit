@@ -1,0 +1,73 @@
+# Model evaluation configuration
+# To run:
+
+# pairit_eval model.model_path=path_to_your_checkpoint.ckpt
+
+defaults:
+  - data@datamodule: bace_real_molecule_improvement
+  - _self_
+
+output_dir: ${oc.env:PAIRIT_OUTPUT_ROOT,./outputs}/${model.run_name}/evaluation_results/${model.extra_name}/${split}/${now:%Y-%m-%d_%H-%M-%S}
+
+
+
+split: test
+
+datamodule:
+  epsilon: 0.5
+  utility_direction: "increasing"
+
+
+# Training info for computing datapoints seen (extracted from checkpoint + config)
+training_batch_size: null  # Set to override datamodule.batch_size for datapoints calculation
+training_accumulate_grad_batches: 1
+training_num_devices: 1
+
+# Optional wandb logging for evaluation results
+wandb_project: null  # Set to enable wandb logging (e.g., "pairit")
+wandb_entity: null
+
+model:
+  _target_: pairit.model.PairITCLM2 #pairit.model.UME # is model_name needed?
+  run_name: ${extract_run_name:${model.ckpt_path}}
+  extra_name: best_val # last_ckpt #
+  ckpt_path: ${pairit_assets:checkpoints/pairit/moleculenet/bace/finetuned.ckpt}
+  
+  model_name: CLM_68M
+  max_length: 300 #512
+  transform_fn: ${datamodule.transform_fn}
+  # are other arguments needed? if not will use the defaults. e.g. use model_name?
+  
+  # DEPRECATED: mask_input_tokens, mask_first_molecule, mask_second_molecule, mask_rate
+  # were removed from PairITCLM2. Conditional masking is now controlled by
+  # conditional_loss_only in the model config. These params are kept for reference only.
+  # mask_input_tokens: false
+  # mask_first_molecule: false
+  # mask_second_molecule: false
+  # mask_rate: 0.15
+
+callbacks:
+  #- _target_: pairit.callbacks.FirstMoleculePerplexityCallback 
+    # max_length: ${datamodule.tokenizer_max_length}
+    # batch_size: 8
+  
+  - _target_: pairit.callbacks.MoleculeValidationCallback
+    num_unconditional_generations: 0  # Number of molecules to generate for validity checking
+    num_conditional_generations: 1e9  # Number of conditional molecules to generate (full validation set)
+    save_dir: ${output_dir}/generated_molecules
+    max_samples_to_save: 1e9  # Save all generated samples
+    reference_smiles_files:
+      - name: bace_train
+        path: ${pairit_assets:data/moleculenet/bace/train/molecules.parquet}
+        default: true
+      - name: zinc_train
+        path: ${pairit_assets:data/zinc/train/molecules.parquet}
+    expensive_metrics_to_compute: ["memorization"]
+    temperature: 0.5   # project standard for evaluation (was 0.95)  # Sampling temperature for molecule generation
+    save_pdfs: false  # Don't save PDFs (memory-intensive)
+    num_generations_per_seed: 5  # Number of molecules to generate per conditioning molecule
+    visualization_property_name: "Class"
+    property_names: ["Class"]
+    utility_key: ${datamodule.utility_key}
+    utility_direction: ${datamodule.utility_direction}
+  

@@ -1,0 +1,3 @@
+preemption:
+  _target_: pairit.callbacks.PreemptionCallback
+  log_preemption_events: true

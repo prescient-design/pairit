@@ -1,0 +1,8 @@
+defaults:
+  - base.yaml
+  - molecule_validation.yaml
+  - lora.yaml
+  - _self_
+
+# This configuration is specific to molecule improvement tasks
+# It extends the base callbacks with molecule validation capabilities 

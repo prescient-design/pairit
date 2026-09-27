@@ -1,0 +1,47 @@
+# @package data.prompting
+
+properties:
+  enabled: true
+  names: ["logp"]
+  selection:
+    mode: all   # Will be overridden by experiment config
+    k: 1
+    seed: 0
+  include:
+    type: true
+    start_value: bin
+    direction: true
+    magnitude: bin
+  randomize_tokens: false  # If true, replace property tokens (start_bin, direction, delta_bin) with random values (ablation)
+  source:
+    prefer_columns: true
+    compute_if_missing: true
+    column_map: {}
+  value_binning:
+    mode: fixed
+    default:
+      num_bins: 4
+      range: null
+    per_property:
+      logp: {range: [-2.0, 6.0]}
+  delta_binning:
+    mode: fixed
+    default:
+      num_bins: 4
+      range: null
+    per_property:
+      logp: {range: [0.0, 3.0]}
+
+distance:
+  enabled: false  # Will be overridden by experiment config
+  binning:
+    mode: curve_fit
+    num_bins: 20
+  source:
+    distribution_file: "distance_distributions.parquet"
+    distance_column: "similarity"
+    is_similarity: true
+    min_pairs_per_molecule: 10
+    max_fraction_low_pairs: 0.1
+    compute_if_missing: true
+

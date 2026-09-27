@@ -1,0 +1,28 @@
+# @package _global_
+
+# Property prompting overlay for BBBP (all supported properties + p_np).
+#
+# Use with:
+#   pairit_train --config-name train_molecule_improvement experiment=bbbp_property_prompting_all_and_dist
+#
+# Mirrors bace_property_prompting_all_and_dist but for BBBP.
+
+defaults:
+  - _self_
+  - /prompting: bbbp_all_props
+
+data:
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${....prompting.properties.names}
+        num_value_bins: ${....prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${....prompting.properties.delta_binning.default.num_bins}
+      add_distance_prompt_tokens: ${data.prompting.distance.enabled}
+      distance_prompt_tokens:
+        num_bins: ${data.prompting.distance.binning.num_bins}
+
+callbacks:
+  molecule_validation:
+    prompting: ${data.prompting}

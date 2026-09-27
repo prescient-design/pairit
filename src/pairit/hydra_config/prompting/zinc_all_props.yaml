@@ -1,0 +1,117 @@
+# @package data.prompting
+#
+# Consolidated config with data-driven ranges covering ZINC, BACE, BBBP, and HIV.
+# Ranges computed from cross-dataset analysis (see notebooks/zinc_property_distributions.ipynb):
+#   value_binning: p0.1–p99.9 + 5% margin, union envelope across all datasets
+#   delta_binning: max observed |delta| + 5% margin across all datasets
+#
+# Important note on `sa`:
+# - Some ZINC parquet files contain an `sa` column in ~[0.30, 0.99] that is
+#   anti-correlated with RDKit+sascorer SA (~[1, 10]).
+# - To keep `sa` meaning consistent across datasets, this config forces RDKit SA
+#   computation by mapping `sa` to a non-existent column name via `column_map`.
+
+properties:
+  enabled: true  # enable/disable property prompting
+  # All properties supported by dataset-side prompting + validation property registry
+  names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c"]
+  selection:
+    mode: all   # random_one | random_k | all | explicit
+    k: 1  # number of properties to select when mode=random_k
+    seed: 0  # random seed for deterministic property selection
+    explicit_names: null  # used when mode=explicit; list of property names to include
+  include:
+    type: true  # true | false - include property type token <p_{name}> (e.g., <p_logp>)
+    start_value: bin  # off | bin - include starting value as bin token <p0_{name}_{bb}> (e.g., <p0_logp_07>)
+    direction: true  # true | false - include direction token <pdir_up>/<pdir_down>/<pdir_any> (increase/decrease/either)
+    magnitude: bin  # off | bin - include magnitude of change as bin token <pd_{name}_{bb}> (e.g., <pd_logp_03> for |Δ|)
+    property_dropout:             # drop entire properties from prompt (training only)
+      enabled: false
+      rate: 0.3                 # probability of dropping each property entirely
+    component_dropout:          # per-property component dropout (training only)
+      enabled: false
+      rate: 0.3                 # probability of dropping each component per property
+      epoch_vary: true          # vary dropout pattern across epochs
+    bounded_delta:              # bounded (atmost/atleast) delta tokens (training only)
+      enabled: false
+      fraction: 0.3             # fraction of examples that use bounded (vs exact) delta
+      mode: both                # atmost | atleast | both
+  randomize_tokens: false  # If true, replace property tokens (start_bin, direction, delta_bin) with random values (ablation)
+  # Eval-time prompt override (disabled by default; enable via eval scripts)
+  eval_override:
+    enabled: false
+    # Value overrides (null = compute from seed/pair as usual)
+    start_bin: null       # int | null
+    direction: null       # "up" | "down" | "any" | null
+    delta_bin: null        # int | null
+    delta_mode: "exact"    # "exact" | "atmost" | "atleast"
+    # Component dropping (false = suppress component even if model was trained with it)
+    include_start_value: true
+    include_direction: true
+    include_magnitude: true
+
+  source:
+    prefer_columns: true  # if true, read properties from parquet columns first (faster than computing)
+    compute_if_missing: true  # if true, compute properties using RDKit when not found in columns
+    # Force RDKit SA computation (avoids using any existing `sa` column with different scaling).
+    column_map: {sa: "sa_rdkit_score"}  # map property names to parquet column names, e.g. {"logp": "logp_value"}
+
+  # Binning spec (fixed ranges).  Data-driven ranges from cross-dataset analysis
+  # (ZINC + BACE + BBBP + HIV).  See notebooks/zinc_property_distributions.ipynb.
+  value_binning:
+    mode: fixed  # fixed | inferred
+    default:
+      num_bins: 32  # number of bins for properties without per_property override
+      range: null  # [min, max] range; null uses per_property ranges or infers from data
+    per_property:
+      logp: {range: [-9.36, 9.85]}
+      qed: {range: [0.0, 0.99]}
+      sa: {range: [0.81, 7.56]}  # RDKit sascorer scale
+      mw: {range: [26.1, 801.5]}
+      tpsa: {range: [-17.0, 357.5]}
+      hbd: {range: [-0.65, 13.6]}
+      hba: {range: [-0.85, 17.8]}
+      rotatable_bonds: {range: [-0.35, 7.35]}
+      frac_sp3_c: {range: [-0.05, 1.05]}
+      Class: {range: [-0.05, 1.05]}
+      p_np: {range: [-0.05, 1.05]}
+      HIV_active: {range: [-0.05, 1.05]}
+
+  delta_binning:
+    mode: fixed  # fixed | inferred
+    default:
+      num_bins: 16  # number of bins for delta magnitudes without per_property override
+      range: null  # [min, max] range for |Δ|; null uses per_property ranges or infers from data
+    per_property:
+      logp: {range: [0.0, 9.88]}
+      qed: {range: [0.0, 0.73]}
+      sa: {range: [0.0, 5.07]}
+      mw: {range: [0.0, 312.8]}
+      tpsa: {range: [0.0, 128.6]}
+      hbd: {range: [0.0, 5.25]}
+      hba: {range: [0.0, 8.4]}
+      rotatable_bonds: {range: [0.0, 8.4]}
+      frac_sp3_c: {range: [0.0, 1.05]}
+      Class: {range: [0.0, 1.05]}
+      p_np: {range: [0.0, 1.05]}
+      HIV_active: {range: [0.0, 1.05]}
+
+distance:
+  enabled: false  # Enable/disable distance prompting
+  binning:
+    mode: curve_fit  # curve_fit | fixed_quartiles
+    num_bins: 20  # Used when mode=curve_fit
+  source:
+    distribution_file: "distance_distributions.parquet"  # Relative to data root
+    distance_column: "morgan_tanimoto_distance"  # Column name in pairs file. "similarity" for bace data
+    is_similarity: false  # If true, column contains similarity (1-distance); convert to distance by doing 1-value
+    min_pairs_per_molecule: 10  # Minimum pairs required per molecule_a
+    max_fraction_low_pairs: 0.1  # Fail if >10% of molecules have < min_pairs
+    compute_if_missing: true  # Compute distributions if file doesn't exist
+  # Eval-time distance override (disabled by default; enable via eval scripts).
+  # When enabled, every seed gets the same target distance bin injected into its
+  # prompt (<dc><d_NN>), independent of any ground-truth pair. This is what lets you
+  # *specify* a desired structural distance at inference and test controllability.
+  eval_override:
+    enabled: false
+    bin: null  # int | null - target distance bin (0..num_bins-1; 0..3 for fixed_quartiles)

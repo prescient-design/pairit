@@ -1,0 +1,24 @@
+defaults:
+  - _self_
+  - data: molecule_improvement.yaml
+  - model: clm2_smiles.yaml
+  - callbacks: molecule_improvement.yaml
+  - logger: wandb.yaml
+  - trainer: default.yaml
+  - setup: default.yaml
+  - paths: default.yaml
+  - lr_scheduler: default.yaml
+  - plugins: null
+  - experiment: null
+
+dryrun: false
+run_test: null
+compile: false
+seed: 42
+preempt_friendly: false  # Enable preemption support - resume from latest checkpoint and sync with existing wandb run
+weights_only: true  # If true, load only model weights from checkpoint, not optimizer state
+
+# Paths
+paths:
+  root_dir: "first_run"
+  output_dir: "outputs/molecule_improvement" 

@@ -1,0 +1,40 @@
+# src/pairit/hydra_config/data/molecule_improvement.yaml
+defaults:
+  - _self_
+  - transform_fn: smiles_tokenizer_transform
+
+_target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
+
+# Data root directory. Concrete data configs (bace_real_molecule_improvement.yaml,
+# etc.) override this with their own path. Set to Hydra's required marker so a
+# bare `data=molecule_improvement` without an override fails loud rather than
+# reading a stale researcher-specific default.
+root: ???
+molecule_filename: "molecules.parquet"
+train_pair_filename: "pairs_train.parquet" #"pairs_filtered_107k_shape_percentile_1.parquet"
+val_pair_filename: "pairs_val.parquet"
+test_pair_filename: "pairs_test.parquet"
+
+# Utility selection
+utility_key: "gap"  # Can be "gap", "homo", "lumo", "u0", "u", "h", "g", etc.
+
+# Filtering parameters
+shape_tanimoto_percentile: null #1.0
+shape_tanimoto_num_pairs: 50 #100
+
+# Filtering parameters
+delta: None #0.3  # Distance threshold
+epsilon: 0.001  # Utility improvement threshold # this is included already in the parquet file generation..
+
+duplicate: false
+just_first: false
+
+use_cache: false
+
+# Training parameters
+batch_size: 64 # was previously 4
+shuffle: true
+num_workers: 4
+pin_memory: true
+drop_last: true
+max_train_samples: null #1000

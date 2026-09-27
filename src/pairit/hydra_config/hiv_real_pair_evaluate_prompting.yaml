@@ -1,0 +1,74 @@
+# HIV evaluation with property prompting enabled.
+# Extends hiv_real_pair_evaluate with the all-props prompting block (mirrors
+# bace_real_pair_evaluate_prompting). Used for the property-prompt grid sweep on
+# the hiv_multiprop_real checkpoint (logp prompting via eval_override).
+#
+# pairit_eval --config-name=hiv_real_pair_evaluate_prompting model.ckpt_path=...
+defaults:
+  - hiv_real_pair_evaluate
+  - _self_
+
+datamodule:
+  prompting:
+    properties:
+      enabled: true
+      names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "HIV_active"]
+      selection:
+        mode: all
+        k: 1
+        seed: 0
+      include:
+        type: true
+        start_value: bin
+        direction: true
+        magnitude: bin
+      randomize_tokens: false
+      source:
+        prefer_columns: true
+        compute_if_missing: true
+        column_map: {}
+        fallback_column_map: {HIV_active: "hiv_b_oracle_pred"}
+      value_binning:
+        mode: fixed
+        default:
+          num_bins: 32
+          range: null
+        per_property:
+          logp: {range: [-2.0, 6.0]}
+          qed: {range: [0.0, 1.0]}
+          sa: {range: [1.0, 10.0]}
+          mw: {range: [100.0, 700.0]}
+          tpsa: {range: [0.0, 200.0]}
+          hbd: {range: [0.0, 10.0]}
+          hba: {range: [0.0, 20.0]}
+          rotatable_bonds: {range: [0.0, 20.0]}
+          frac_sp3_c: {range: [0.0, 1.0]}
+          HIV_active: {range: [0.0, 1.0]}
+      delta_binning:
+        mode: fixed
+        default:
+          num_bins: 16
+          range: null
+        per_property:
+          logp: {range: [0.0, 3.0]}
+          qed: {range: [0.0, 0.5]}
+          sa: {range: [0.0, 5.0]}
+          mw: {range: [0.0, 300.0]}
+          tpsa: {range: [0.0, 100.0]}
+          hbd: {range: [0.0, 10.0]}
+          hba: {range: [0.0, 20.0]}
+          rotatable_bonds: {range: [0.0, 20.0]}
+          frac_sp3_c: {range: [0.0, 1.0]}
+          HIV_active: {range: [0.0, 1.0]}
+    distance:
+      enabled: false
+      source:
+        distance_column: "similarity"
+        is_similarity: true
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "HIV_active"]
+        num_value_bins: 32
+        num_delta_bins: 16

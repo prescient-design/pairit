@@ -1,0 +1,45 @@
+# src/pairit/hydra_config/data/molecule_improvement.yaml
+defaults:
+  - _self_
+  - transform_fn: smiles_tokenizer_transform
+
+_target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
+
+# Data root directory
+root: "${pairit_assets:data/zinc}"  # per-split subdirs; matches moleculenet/tdc layout
+molecule_filename: "train/molecules.parquet"
+val_molecule_filename: "valid/molecules.parquet"
+# ZINC ships no test/molecules.parquet -- point val to itself; downstream eval uses
+# the ICML 5k test_subset (see DEFAULT_ZINC250K_TEST_CSV in eval/cli_utils.py).
+test_molecule_filename: "valid/molecules.parquet"
+train_pair_filename: "train/pairs.parquet"
+# valid/pairs.parquet is the "no test" filtered set that excludes the 5K ICML test
+# molecules — using pairs_val.parquet would leak test into val and corrupt early stopping.
+val_pair_filename: "valid/pairs.parquet"
+test_pair_filename: "test/pairs.parquet"
+
+# Utility selection
+utility_key: "logp"  # Can be "gap", "homo", "lumo", "u0", "u", "h", "g", etc.
+
+# Filtering parameters
+shape_tanimoto_percentile: null #1.0
+shape_tanimoto_num_pairs: null #100
+max_num_occurrences: null
+
+# Filtering parameters
+delta: None #0.3  # Distance threshold
+epsilon: 1  # Utility improvement threshold # this is included already in the parquet file generation..
+
+use_cache: false
+
+just_first: false
+
+keep_original_ordering: false
+
+# Training parameters
+batch_size: 64 # was previously 4
+shuffle: true
+num_workers: 4
+pin_memory: true
+drop_last: true
+max_train_samples: null #1000

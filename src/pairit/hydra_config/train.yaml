@@ -1,0 +1,35 @@
+# Top-level Hydra config for the `pairit_train` CLI entry point.
+#
+# Plainest-possible base: composes the standard data / model / callbacks /
+# trainer / logger / lr_scheduler / paths / setup groups so users can override
+# any of them from the command line, e.g.:
+#
+#     pairit_train data=zinc_molecule_improvement model=clm
+#
+# Task-specific variants (train_molecule_improvement*.yaml, etc.) set opinionated
+# defaults on top of these groups. Use those when you want their preset combo;
+# use `train` (this file) when you're picking the pieces yourself.
+defaults:
+  - _self_
+  - data: bace_real_molecule_improvement
+  - model: clm
+  - callbacks: molecule_improvement
+  - logger: wandb
+  - trainer: default
+  - setup: default
+  - paths: default
+  - lr_scheduler: default
+  - plugins: null
+  - experiment: null
+
+dryrun: false
+run_test: null
+compile: false
+seed: 42
+preempt_friendly: false  # Enable preemption support - resume from latest checkpoint and sync with existing wandb run
+weights_only: true  # If true, load only model weights from checkpoint, not optimizer state
+
+# Paths — root_dir is required by paths/default.yaml. Honour $PAIRIT_RUNS if set
+# (release convention; see CLAUDE.md), otherwise write under ./runs.
+paths:
+  root_dir: ${oc.env:PAIRIT_RUNS,.}/runs
