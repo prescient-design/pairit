@@ -1441,8 +1441,11 @@ name = "pair-gen"
 version = "0.0.1"
 source = { editable = "pair_gen" }
 dependencies = [
+    { name = "matplotlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "omegaconf", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pillow", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "polars", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "py3dmol", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pyarrow", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1455,9 +1458,12 @@ dependencies = [
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=21.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=3.8" },
+    { name = "matplotlib" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=0.800" },
     { name = "numpy" },
+    { name = "omegaconf" },
     { name = "pandas" },
+    { name = "pillow" },
     { name = "polars" },
     { name = "py3dmol" },
     { name = "pyarrow" },
@@ -1480,16 +1486,22 @@ dependencies = [
     { name = "datasets", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "einops", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "hydra-core", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "joblib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "lightning", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "matplotlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "omegaconf", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pair-gen", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "peft", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pyarrow", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-dotenv", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pyyaml", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "rdkit", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "s3fs", extra = ["boto3"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "scikit-learn", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "scipy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "seaborn", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "tokenizers", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "torchmetrics", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1503,6 +1515,9 @@ dependencies = [
 flash = [
     { name = "flash-attn", marker = "sys_platform == 'linux'" },
     { name = "rotary-embedding-torch", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+test = [
+    { name = "pytest", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 trl = [
     { name = "accelerate", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1529,17 +1544,24 @@ requires-dist = [
     { name = "einops" },
     { name = "flash-attn", marker = "sys_platform == 'linux' and extra == 'flash'", specifier = ">=2.8.0.post2" },
     { name = "hydra-core" },
+    { name = "joblib" },
     { name = "lightning" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "omegaconf" },
     { name = "pair-gen", editable = "pair_gen" },
     { name = "pandas" },
     { name = "peft" },
     { name = "pyarrow", specifier = ">=20,<25" },
+    { name = "pytest", marker = "extra == 'test'" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "rdkit", specifier = ">=2024.9.4" },
     { name = "rotary-embedding-torch", marker = "extra == 'flash'" },
     { name = "s3fs", extras = ["boto3"] },
     { name = "scikit-learn", specifier = ">=1.7,<1.8" },
     { name = "scipy" },
+    { name = "seaborn" },
     { name = "tokenizers" },
     { name = "torch" },
     { name = "torchmetrics" },
@@ -1549,7 +1571,7 @@ requires-dist = [
     { name = "universal-pathlib" },
     { name = "wandb" },
 ]
-provides-extras = ["flash", "trl"]
+provides-extras = ["flash", "trl", "test"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2280,6 +2302,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/6d/f0/b6ac354a956384fd8abee2debbb624648125b298f2c4a7b4f0d6248048a5/scipy-1.16.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:03931b4e870c6fef5b5c0970d52c9f6ddd8c8d3e934a98f09308377eba6f3824", size = 35070225, upload-time = "2025-06-22T16:19:31.416Z" },
     { url = "https://files.pythonhosted.org/packages/e5/73/5cbe4a3fd4bc3e2d67ffad02c88b83edc88f381b73ab982f48f3df1a7790/scipy-1.16.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:512c4f4f85912767c351a0306824ccca6fd91307a9f4318efe8fdbd9d30562ef", size = 35389070, upload-time = "2025-06-22T16:19:37.387Z" },
     { url = "https://files.pythonhosted.org/packages/86/e8/a60da80ab9ed68b31ea5a9c6dfd3c2f199347429f229bf7f939a90d96383/scipy-1.16.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:e69f798847e9add03d512eaf5081a9a5c9a98757d12e52e6186ed9681247a1ac", size = 37825287, upload-time = "2025-06-22T16:19:43.375Z" },
+]
+
+[[package]]
+name = "seaborn"
+version = "0.13.2"
+source = { registry = "https://pypi.python.org/simple" }
+dependencies = [
+    { name = "matplotlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/59/a451d7420a77ab0b98f7affa3a1d78a313d2f7281a57afb1a34bae8ab412/seaborn-0.13.2.tar.gz", hash = "sha256:93e60a40988f4d65e9f4885df477e2fdaff6b73a9ded434c1ab356dd57eefff7", size = 1457696, upload-time = "2024-01-25T13:21:52.551Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/11/00d3c3dfc25ad54e731d91449895a79e4bf2384dc3ac01809010ba88f6d5/seaborn-0.13.2-py3-none-any.whl", hash = "sha256:636f8336facf092165e27924f223d3c62ca560b1f2bb5dff7ab7fad265361987", size = 294914, upload-time = "2024-01-25T13:21:49.598Z" },
 ]
 
 [[package]]

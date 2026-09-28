@@ -12,7 +12,17 @@ dependencies = [
     "torchmetrics",
     "universal_pathlib",
     "pandas",
+    "numpy",
     "scipy",
+    "joblib",
+    "pyyaml",
+    "omegaconf",
+    # comparison_matrix.py and the eval plotting scripts import these at module
+    # level. matplotlib only reached the lock as a transitive dep; seaborn was
+    # missing outright, so `import pairit.eval.comparison_matrix` failed on a
+    # fresh install.
+    "matplotlib",
+    "seaborn",
     "pyarrow>=20,<25",
     "s3fs[boto3]",
     "boto3",
@@ -54,6 +64,9 @@ flash = [
 trl = [
     "trl",
     "accelerate",
+]
+test = [
+    "pytest",
 ]
 
 [tool.setuptools.packages.find]
