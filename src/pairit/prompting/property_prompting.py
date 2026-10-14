@@ -13,7 +13,8 @@ Important: prompts must not include whitespace; the SMILES tokenizer treats whit
 as unknown tokens and it will corrupt the conditioning prefix.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import math
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 
@@ -61,6 +62,13 @@ class ParsedPropertyPrompt:
     direction: Optional[Direction] = None
     delta_bin: Optional[int] = None
     delta_mode: DeltaMode = "exact"
+    signed_delta_bin: Optional[int] = None
+    # Pair truth is carried separately from model tokens. In particular, bin 08
+    # in a 16-bin signed prompt contains both zero and small positive changes.
+    raw_direction: Optional[Direction] = None
+    raw_delta: Optional[float] = None
+    raw_seed_value: Optional[float] = None
+    raw_target_value: Optional[float] = None
 
 
 def _validate_bins(num_bins: int, bin_idx: int) -> int:
@@ -128,6 +136,29 @@ def delta_to_bin(*, binning: PropertyBinningConfig, delta: float, magnitude: boo
     return value_to_bin(binning=binning, value=d)
 
 
+def _signed_delta_binning(binning: PropertyBinningConfig) -> PropertyBinningConfig:
+    """Interpret the configured magnitude range ``[0, max]`` symmetrically."""
+    if binning.range is None:
+        raise ValueError("binning.range is required for signed delta bins")
+    lo, hi = _validate_range(binning.range)
+    if lo != 0.0 or not math.isfinite(hi):
+        raise ValueError("signed delta bins require a finite range [0, positive max]")
+    _validate_bins(binning.num_bins, 0)
+    return replace(binning, range=(-hi, hi))
+
+
+def signed_delta_to_bin(*, binning: PropertyBinningConfig, delta: float) -> int:
+    """Map a finite signed delta onto equal-width bins over ``[-max, +max]``."""
+    if not math.isfinite(float(delta)):
+        raise ValueError(f"signed delta must be finite, got {delta!r}")
+    return value_to_bin(binning=_signed_delta_binning(binning), value=float(delta))
+
+
+def signed_bin_to_range(*, binning: PropertyBinningConfig, bin_idx: int) -> Tuple[float, float]:
+    """Return the interval of a signed bin, using the same limits as encoding."""
+    return bin_to_range(binning=_signed_delta_binning(binning), bin_idx=bin_idx)
+
+
 def build_property_prompt_text(
     prompts: Sequence[ParsedPropertyPrompt],
     *,
@@ -147,7 +178,11 @@ def build_property_prompt_text(
             parts.append(f"<p0_{p.property_name}_{p.start_bin:0{int(value_width)}d}>")
         if p.direction is not None:
             parts.append(f"<pdir_{p.direction}>")
-        if p.delta_bin is not None:
+        if p.signed_delta_bin is not None:
+            if p.delta_bin is not None or p.delta_mode != "exact":
+                raise ValueError("signed delta prompts cannot also specify unsigned or bounded deltas")
+            parts.append(f"<psd_{p.property_name}_{p.signed_delta_bin:0{int(delta_width)}d}>")
+        elif p.delta_bin is not None:
             if p.delta_mode == "atmost":
                 parts.append(f"<pdmax_{p.property_name}_{p.delta_bin:0{int(delta_width)}d}>")
             elif p.delta_mode == "atleast":
@@ -194,6 +229,7 @@ def parse_property_prompt_from_ids(tokenizer: Any, ids: Sequence[int]) -> List[P
                 direction=cur.direction,
                 delta_bin=cur.delta_bin,
                 delta_mode=cur.delta_mode,
+                signed_delta_bin=cur.signed_delta_bin,
             )
             out[-1] = cur
             continue
@@ -207,7 +243,12 @@ def parse_property_prompt_from_ids(tokenizer: Any, ids: Sequence[int]) -> List[P
                 direction=d,  # type: ignore[assignment]
                 delta_bin=cur.delta_bin,
                 delta_mode=cur.delta_mode,
+                signed_delta_bin=cur.signed_delta_bin,
             )
+            out[-1] = cur
+            continue
+        if tok.startswith(f"<psd_{cur.property_name}_") and tok.endswith(">"):
+            cur = replace(cur, signed_delta_bin=_parse_bin_suffix(tok))
             out[-1] = cur
             continue
         # Bounded delta: <pdmax_{name}_{bb}>
@@ -219,6 +260,7 @@ def parse_property_prompt_from_ids(tokenizer: Any, ids: Sequence[int]) -> List[P
                 direction=cur.direction,
                 delta_bin=b,
                 delta_mode="atmost",
+                signed_delta_bin=cur.signed_delta_bin,
             )
             out[-1] = cur
             continue
@@ -231,6 +273,7 @@ def parse_property_prompt_from_ids(tokenizer: Any, ids: Sequence[int]) -> List[P
                 direction=cur.direction,
                 delta_bin=b,
                 delta_mode="atleast",
+                signed_delta_bin=cur.signed_delta_bin,
             )
             out[-1] = cur
             continue
@@ -243,6 +286,7 @@ def parse_property_prompt_from_ids(tokenizer: Any, ids: Sequence[int]) -> List[P
                 direction=cur.direction,
                 delta_bin=b,
                 delta_mode="exact",
+                signed_delta_bin=cur.signed_delta_bin,
             )
             out[-1] = cur
             continue
@@ -309,6 +353,13 @@ def format_property_prompt_summary(
 
         if p.direction is not None:
             seg.append(f"dir={p.direction}")
+
+        if p.signed_delta_bin is not None:
+            seg.append(f"signed-Δ={int(p.signed_delta_bin):02d}")
+            if show_ranges:
+                db = _binning_for(p.property_name, "delta")
+                if db is not None and db.range is not None:
+                    seg[-1] += _fmt_rng(signed_bin_to_range(binning=db, bin_idx=p.signed_delta_bin))
 
         if p.delta_bin is not None:
             sym = _DELTA_SYMBOL.get(p.delta_mode, "|Δ|=")

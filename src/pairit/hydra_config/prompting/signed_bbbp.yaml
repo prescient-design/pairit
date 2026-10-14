@@ -1,0 +1,21 @@
+# @package data.prompting
+# September prepared-data train-pair p99 limits; see README.md.
+defaults:
+  - signed_zinc@_here_
+  - _self_
+
+properties:
+  source:
+    column_map:
+      target: p_np
+  delta_binning:
+    per_property:
+      logp: {range: [0.0, 2.642859]}
+      qed: {range: [0.0, 0.3595969117]}
+      sa: {range: [0.0, 3.92270679527]}
+      mw: {range: [0.0, 148.38981]}
+      tpsa: {range: [0.0, 68.434]}
+      frac_sp3_c: {range: [0.0, 0.875]}
+      hbd: {range: [0.0, 8.0]}
+      hba: {range: [0.0, 8.0]}
+      rotatable_bonds: {range: [0.0, 8.0]}

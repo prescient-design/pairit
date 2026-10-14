@@ -52,7 +52,8 @@ class MoleculeGenerator:
     @staticmethod
     def batch_generate_conditional(pl_module, input_ids: torch.Tensor, 
                                    attention_mask: torch.Tensor, temperature: float = 0.95,
-                                   num_generations_per_seed: int = 1) -> List[torch.Tensor]:
+                                   num_generations_per_seed: int = 1,
+                                   pair_seeds: Optional[List[int]] = None) -> List[torch.Tensor]:
         """
         Batch generate molecules using conditional generation.
         
@@ -71,6 +72,24 @@ class MoleculeGenerator:
             Results are ordered as: [seed0_gen0, seed0_gen1, ..., seed1_gen0, seed1_gen1, ...]
         """
         from .smiles_utils import SmilesUtils
+
+        if pair_seeds is not None:
+            if len(pair_seeds) != len(input_ids):
+                raise ValueError("One generation seed is required per input pair")
+            device = torch.device(pl_module.model.device)
+            device_index = device.index if device.index is not None else 0
+            devices = [device_index] if device.type == "cuda" else []
+            result = []
+            for i, seed in enumerate(pair_seeds):
+                with torch.random.fork_rng(devices=devices):
+                    torch.random.default_generator.manual_seed(seed)
+                    if devices:
+                        torch.cuda.default_generators[device_index].manual_seed(seed)
+                    result.extend(MoleculeGenerator.batch_generate_conditional(
+                        pl_module, input_ids[i:i + 1], attention_mask[i:i + 1],
+                        temperature=temperature, num_generations_per_seed=num_generations_per_seed,
+                    ))
+            return result
         
         batch_size = input_ids.shape[0]
         
@@ -140,6 +159,8 @@ class MoleculeGenerator:
             pad_token_id=pl_module.tokenizer.pad_token_id,
             eos_token_id=pl_module.tokenizer.eos_token_id,
         )
+        if len(generated_sequences) != len(repeated_valid_indices):
+            raise ValueError("Generator returned fewer or more attempts than requested")
         
         # Create result list with empty tensors for invalid samples
         # Result has batch_size * num_generations_per_seed elements

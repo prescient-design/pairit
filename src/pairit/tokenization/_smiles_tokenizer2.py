@@ -87,6 +87,7 @@ class SmilesTokenizer2Fast(PreTrainedTokenizerFast):
         self,
         *,
         inherit_special_tokens: list[str] | None = None,
+        inherit_token_ids: dict[str, int] | None = None,
         add_dataset_tokens: bool = False,
         max_dataset_id: int | None = None,
         add_property_prompt_tokens: bool = False,
@@ -109,26 +110,48 @@ class SmilesTokenizer2Fast(PreTrainedTokenizerFast):
         # These tokens are inherited from a checkpoint's tokenizer to ensure compatibility.
         # They are added BEFORE any other tokens to preserve the exact token IDs from the checkpoint.
         # We track them in a set so subsequent sections know these are valid special tokens.
+        # A saved ID map also recovers tokens missing from the tokenizer's
+        # additional_special_tokens metadata. Restore every added token in ID
+        # order, then mark the saved special subset below.
+        if inherit_token_ids is not None:
+            if any(not isinstance(i, int) or isinstance(i, bool) for i in inherit_token_ids.values()):
+                raise ValueError("Inherited token IDs must be integers")
+            if sorted(inherit_token_ids.values()) != list(range(len(inherit_token_ids))):
+                raise ValueError("Inherited token IDs must be unique and contiguous from zero")
+            saved_tokens = sorted(inherit_token_ids, key=inherit_token_ids.get)
+            vocab = self.get_vocab()
+            self.add_tokens([tok for tok in saved_tokens if tok not in vocab])
+            restored = self.get_vocab()
+            mismatches = [
+                tok for tok, idx in inherit_token_ids.items() if restored.get(tok) != idx
+            ]
+            if mismatches:
+                raise ValueError(
+                    f"Checkpoint vocabulary IDs changed for {len(mismatches)} tokens: "
+                    f"{mismatches[:5]}. The saved vocabulary is incompatible with this tokenizer."
+                )
+
         _inherited_token_set: set[str] = set()
         if inherit_special_tokens:
             _inherited_token_set = set(inherit_special_tokens)
-            vocab = self.get_vocab()
             existing_additional = set(getattr(self, "additional_special_tokens", None) or [])
             existing_special = set(getattr(self, "all_special_tokens", None) or [])
 
             to_add: list[str] = []
             already_present: list[str] = []
             for tok in inherit_special_tokens:
-                if tok in vocab:
-                    already_present.append(tok)
-                    continue
                 if tok in existing_additional or tok in existing_special:
                     already_present.append(tok)
                     continue
+                # Register saved special tokens even when the ID map just
+                # restored them as ordinary added tokens.
                 to_add.append(tok)
 
             if to_add:
-                self.add_special_tokens({"additional_special_tokens": to_add})
+                self.add_special_tokens(
+                    {"additional_special_tokens": to_add},
+                    replace_additional_special_tokens=False,
+                )
 
             # Store for diagnostics (can be accessed later if needed)
             self._inherited_tokens_added = to_add
@@ -162,7 +185,10 @@ class SmilesTokenizer2Fast(PreTrainedTokenizerFast):
             if to_add:
                 # This is append-only: new IDs are added after the existing vocab,
                 # preserving all existing token IDs for checkpoint compatibility.
-                self.add_special_tokens({"additional_special_tokens": to_add})
+                self.add_special_tokens(
+                    {"additional_special_tokens": to_add},
+                    replace_additional_special_tokens=False,
+                )
 
         # ---------------- property prompting tokens (append-only) ----------------
         if add_property_prompt_tokens:
@@ -220,7 +246,10 @@ class SmilesTokenizer2Fast(PreTrainedTokenizerFast):
 
             if to_add:
                 # Append-only for checkpoint compatibility
-                self.add_special_tokens({"additional_special_tokens": to_add})
+                self.add_special_tokens(
+                    {"additional_special_tokens": to_add},
+                    replace_additional_special_tokens=False,
+                )
 
         # ---------------- distance prompting tokens (append-only) ----------------
         if add_distance_prompt_tokens:
@@ -257,4 +286,31 @@ class SmilesTokenizer2Fast(PreTrainedTokenizerFast):
 
             if to_add:
                 # Append-only for checkpoint compatibility
-                self.add_special_tokens({"additional_special_tokens": to_add})
+                self.add_special_tokens(
+                    {"additional_special_tokens": to_add},
+                    replace_additional_special_tokens=False,
+                )
+
+
+        # Signed tokens follow every legacy family, including distance tokens.
+        # Inherited checkpoint tokens were already inserted in their original order.
+        if add_property_prompt_tokens:
+            num_signed_bins = property_prompt_tokens.get("num_signed_delta_bins")
+            if num_signed_bins is not None:
+                if isinstance(num_signed_bins, bool) or not isinstance(num_signed_bins, int) or num_signed_bins <= 0:
+                    raise ValueError("property_prompt_tokens.num_signed_delta_bins must be a positive int")
+                signed_width = max(2, len(str(num_signed_bins - 1)))
+                signed_tokens = [
+                    f"<psd_{name}_{b:0{signed_width}d}>"
+                    for name in prop_names_sorted
+                    for b in range(num_signed_bins)
+                ]
+                vocab = self.get_vocab()
+                special_tokens = set(self.all_special_tokens) | _inherited_token_set
+                for token in signed_tokens:
+                    if token in vocab and token not in special_tokens:
+                        raise ValueError(f"Refusing to reuse existing non-special token {token!r} for signed prompting")
+                self.add_special_tokens(
+                    {"additional_special_tokens": signed_tokens},
+                    replace_additional_special_tokens=False,
+                )

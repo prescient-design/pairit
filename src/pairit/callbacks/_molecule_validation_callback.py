@@ -268,7 +268,9 @@ class MoleculeValidationCallback(Callback):
                  pairit_dataset_name: Optional[str] = None,
                  pairit_seed_label_column: Optional[str] = None,
                  num_conditional_metric_samples: int | None = None,
-                generation_only: bool = False):
+                 generation_only: bool = False,
+                 pairit_generation_seed: int | None = None,
+                 export_prompt_metadata: bool = False):
         """
         Initialize the MoleculeValidationCallback.
         
@@ -422,7 +424,10 @@ class MoleculeValidationCallback(Callback):
                     # Compute union of prompting properties and callback property_names
                     # This ensures we compute all properties needed for both prompting and validation
                     callback_prop_names = property_names if property_names is not None else []
-                    all_prop_names = list(set(self._prompt_prop_names + callback_prop_names))
+                    # The generic target slot is pair metadata, not a descriptor.
+                    all_prop_names = list(dict.fromkeys(
+                        [p for p in self._prompt_prop_names if p != "target"] + callback_prop_names
+                    ))
                     property_names = all_prop_names
 
                 from pairit.prompting.property_prompting import PropertyBinningConfig as _PBC
@@ -498,6 +503,7 @@ class MoleculeValidationCallback(Callback):
 
         # Track how many conditional generations we've performed this epoch (per process)
         self._conditional_generated_this_epoch = 0
+        self._prompt_requests = {}
         # In mixed validation (multiple val dataloaders), apply conditional quotas per dataset_key.
         self._conditional_generated_this_epoch_by_key: Dict[str, int] = {}
         
@@ -727,6 +733,18 @@ class MoleculeValidationCallback(Callback):
 
         # pairit_eval CSV export settings
         self.export_pairit_csv = export_pairit_csv
+        self.export_prompt_metadata = bool(export_prompt_metadata)
+        self.pairit_generation_seed = pairit_generation_seed
+        if self.export_prompt_metadata:
+            if not save_generated_samples or not export_pairit_csv:
+                raise ValueError("Prompt metadata export requires sample saving and export_pairit_csv")
+            if num_conditional_metric_samples is not None:
+                raise ValueError("Prompt export requires processing every requested attempt")
+        if pairit_generation_seed is not None:
+            from pairit.prompting.metadata import generation_pair_seed
+            generation_pair_seed(pairit_generation_seed, "")  # validate the explicit seed
+            if not self.export_prompt_metadata:
+                raise ValueError("Pair-local generation requires immutable prompt metadata")
         self.pairit_method_name = pairit_method_name
         self.pairit_dataset_name = pairit_dataset_name
         self.pairit_seed_label_column = pairit_seed_label_column
@@ -738,7 +756,10 @@ class MoleculeValidationCallback(Callback):
         if self.save_generated_samples:
             self.save_dir.mkdir(parents=True, exist_ok=True)
             self._generated_samples = []
-            print(f"Molecule saving enabled: will save up to {max_samples_to_save} samples ({self.save_fraction*100:.1f}%) to {save_dir}")
+            if self.export_prompt_metadata:
+                print(f"Saving every prompted attempt to {save_dir}; visualization limit: {max_samples_to_save}")
+            else:
+                print(f"Molecule saving enabled: will save up to {max_samples_to_save} samples ({self.save_fraction*100:.1f}%) to {save_dir}")
         
         # ===== Initialize modular components =====
         self.printer = ValidationPrinter(verbose=True)
@@ -1281,6 +1302,34 @@ class MoleculeValidationCallback(Callback):
         out["method"] = self.pairit_method_name
         out["dataset"] = self.pairit_dataset_name or ""
 
+        if self.export_prompt_metadata:
+            import json
+            required = {
+                "pair_id", "seed_smiles", "target_smiles", "generation_index", "smiles_generated",
+                "prompt_target_direction_property_names", "prompt_target_raw_direction_signs",
+                "prompt_target_raw_deltas", "prompt_target_raw_seed_values", "prompt_target_raw_target_values",
+            }
+            if not required.issubset(df.columns):
+                raise ValueError(f"Missing prompt export columns: {sorted(required - set(df.columns))}")
+            if set(df.pair_id) != set(self._prompt_requests):
+                raise ValueError("Generation export does not cover all requested pairs")
+            for pair_id, group in df.groupby("pair_id", sort=False):
+                if sorted(group.generation_index.tolist()) != list(range(self.num_generations_per_seed)):
+                    raise ValueError(f"Incomplete or duplicated generation slots for pair {pair_id}")
+            out["seed_smiles"] = df["seed_smiles"]
+            out["seed_idx"] = df["pair_id"]
+            for column in df.columns:
+                if column in ("pair_id", "target_smiles", "generation_pair_seed", "evaluation_generation_seed") or column.startswith("prompt_"):
+                    out[column] = df[column].map(
+                        lambda value: json.dumps(value, allow_nan=False) if isinstance(value, (list, dict)) else value
+                    )
+            requests = pd.DataFrame(list(self._prompt_requests.values()))
+            for column in requests.columns:
+                requests[column] = requests[column].map(
+                    lambda value: json.dumps(value, allow_nan=False) if isinstance(value, (list, dict)) else value
+                )
+            requests.to_csv(csv_path.with_name(csv_path.stem + "_requests.csv"), index=False)
+
         # Reorder columns to match pairit_eval expectation
         ordered_cols = ["method", "dataset", "seed_idx", "seed_smiles", "seed_label", "gen_idx", "generated_smiles"]
         extra_cols = [c for c in out.columns if c not in ordered_cols]
@@ -1288,6 +1337,36 @@ class MoleculeValidationCallback(Callback):
 
         out.to_csv(csv_path, index=False)
         print(f"Exported pairit_eval CSV ({len(out)} rows) to {csv_path}")
+
+    def _prompt_batch_metadata(self, batch, count, dataset_key=None):
+        """Record requests before generation; keep original strings out of decoding."""
+        if not self.export_prompt_metadata:
+            return [None] * count
+        import json
+        from pairit.prompting.metadata import generation_pair_seed, pair_identifier
+
+        if "prompt_metadata" not in batch or len(batch["prompt_metadata"]) < count:
+            raise ValueError("Enable prompting.properties.export_metadata on the input dataset")
+        namespace = str(dataset_key or self.pairit_dataset_name or "")
+        if not namespace:
+            raise ValueError("Prompt export requires an explicit dataset namespace")
+        if self._prompt_requests and next(iter(self._prompt_requests.values()))["dataset"] != namespace:
+            raise ValueError("Prompt export requires one dataset per callback")
+        rows = []
+        for encoded in batch["prompt_metadata"][:count]:
+            row = json.loads(encoded)
+            row["dataset"] = namespace
+            row["pair_id"] = pair_identifier(
+                namespace, row["seed_smiles"], row["target_smiles"],
+            )
+            if row["pair_id"] in self._prompt_requests:
+                raise ValueError(f"Repeated input pair {row['pair_id']}; use one request per ordered pair")
+            if self.pairit_generation_seed is not None:
+                row["evaluation_generation_seed"] = self.pairit_generation_seed
+                row["generation_pair_seed"] = generation_pair_seed(self.pairit_generation_seed, row["pair_id"])
+            self._prompt_requests[row["pair_id"]] = row
+            rows.append(row)
+        return rows
 
     def _flush_samples(self, step_type: str, step_id: int, pl_module: pl.LightningModule, trainer: pl.Trainer = None):
         """
@@ -1362,6 +1441,9 @@ class MoleculeValidationCallback(Callback):
             # Export pairit_eval CSV for conditional generations
             if self.export_pairit_csv and step_type == "conditional":
                 self._export_pairit_csv(df, filename)
+
+            if self.max_samples_to_save <= 0:
+                return
 
             # Try to create a visualization grid of the first max_samples_to_save samples
             try:
@@ -1665,6 +1747,7 @@ class MoleculeValidationCallback(Callback):
         metrics_computer=None,
         dataset_key: Optional[str] = None,
         dataloader_idx: Optional[int] = None,
+        prompt_metadata: Optional[dict] = None,
     ) -> Tuple[bool, Dict[str, bool], Optional[bool], Optional[str]]:
         """
         Process a single generated molecule for conditional generation validation.
@@ -1697,14 +1780,24 @@ class MoleculeValidationCallback(Callback):
         tuple
             (is_valid, valid_and_improved dict, is_memorized, canonical_gen)
         """
-        if generated_sequence.numel() == 0:
-            return False, {}, None, None
-
         # 1. Extract SMILES strings
         unmasked_ids, cond_str = SmilesUtils.extract_conditioning_from_batch(
             input_ids, attention_mask, pl_module.tokenizer
         )
-        if unmasked_ids is None:
+        if generated_sequence.numel() == 0 or unmasked_ids is None:
+            if prompt_metadata is not None:
+                self._save_sample({
+                    **prompt_metadata,
+                    "smiles_generated": "",
+                    "smiles_conditioning": prompt_metadata["seed_smiles"],
+                    "smiles_input_1": prompt_metadata["seed_smiles"],
+                    "smiles_input_2": prompt_metadata["target_smiles"],
+                    "generation_index": generation_idx,
+                    "seed_index": sample_idx,
+                    "is_valid": False,
+                    "generation_error": "empty_generation" if generated_sequence.numel() == 0 else "empty_conditioning",
+                    "dataset_key": dataset_key,
+                }, "conditional", batch_idx)
             return False, {}, None, None
 
         generated_as_list = [int(g) for g in generated_sequence.reshape(-1)]
@@ -1738,13 +1831,17 @@ class MoleculeValidationCallback(Callback):
         # This only cleans the SMILES strings extracted from tokens, which are used for property computation.
         # Handles property prompt tokens (<pc>, <p_logp>, <p0_logp_16>, <pd_logp_06>, <pdir_up>, etc.)
         # AND distance prompt tokens (<dc>, <d_00>, <d_03>, etc.)
-        prompt_token_pattern = r'<(?:p(?:c|dir_[^>]*|[0d]?_[^>]*|_[^>]*)|dc|d_\d+)>'
+        prompt_token_pattern = r'<(?:pc|p(?:0|d|sd|dir|dmin|dmax)?_[^>]*|dc|d_\d+)>'
         if full_input_smiles1:
             full_input_smiles1 = re.sub(prompt_token_pattern, '', full_input_smiles1).strip()
         if full_input_smiles2:
             full_input_smiles2 = re.sub(prompt_token_pattern, '', full_input_smiles2).strip()
         if conditioned_smiles:
             conditioned_smiles = re.sub(prompt_token_pattern, '', conditioned_smiles).strip()
+        if prompt_metadata is not None:
+            full_input_smiles1 = prompt_metadata["seed_smiles"]
+            full_input_smiles2 = prompt_metadata["target_smiles"]
+            conditioned_smiles = full_input_smiles1
         
         gt_candidates = []
         if neighbors_smiles and isinstance(neighbors_smiles, (list, tuple)) and len(neighbors_smiles) > 0:
@@ -1778,6 +1875,10 @@ class MoleculeValidationCallback(Callback):
                 parsed_prompts = None
         
         # Parse distance prompt bin if available
+        if prompt_metadata is not None:
+            from pairit.prompting.property_prompting import ParsedPropertyPrompt
+            parsed_prompts = [ParsedPropertyPrompt(**p) for p in prompt_metadata["prompt_target_prompts"]]
+
         distance_prompt_bin = None
         if self._distance_binning_mode is not None and unmasked_ids is not None:
             try:
@@ -1824,7 +1925,7 @@ class MoleculeValidationCallback(Callback):
 
         # 6. Save sample if enabled (using data computed by metrics computer)
         sample_id = f"cond_{batch_idx}_{sample_idx}_gen{generation_idx}_{hash(str(conditioned_smiles))}"
-        if self._should_save_sample(sample_id):
+        if prompt_metadata is not None or self._should_save_sample(sample_id):
             sample_data = {
                 'smiles_generated': new_smiles,
                 'smiles_conditioning': conditioned_smiles,
@@ -1847,6 +1948,8 @@ class MoleculeValidationCallback(Callback):
                 'dataset_key': dataset_key,
                 'dataloader_idx': int(dataloader_idx) if dataloader_idx is not None else None,
             }
+            if prompt_metadata is not None:
+                sample_data.update(prompt_metadata)
 
             # Parse and log prompt spec (property prompting) from conditioning ids.
             if self._prompt_prop_names:
@@ -2098,6 +2201,7 @@ class MoleculeValidationCallback(Callback):
         """
         Reset per-epoch counters for conditional generation.
         """
+        self._prompt_requests = {}
         # Detect DDP world_size and compute per-rank generation quotas so the
         # global total stays constant regardless of the number of ranks.
         # Priority: trainer.world_size > dist.get_world_size() > env WORLD_SIZE.
@@ -2113,6 +2217,8 @@ class MoleculeValidationCallback(Callback):
             self._world_size = _dist.get_world_size()
         else:
             self._world_size = int(os.environ.get('WORLD_SIZE', '1'))
+        if self.export_prompt_metadata and self._world_size != 1:
+            raise ValueError("Complete prompt export currently requires single-process evaluation")
         self._effective_conditional_gens = max(1, self.num_conditional_generations // self._world_size)
         self._effective_unconditional_gens = max(1, self.num_unconditional_generations // self._world_size)
         self._effective_conditional_metric_gens = max(1, self._effective_metric_samples // self._world_size)
@@ -2258,11 +2364,15 @@ class MoleculeValidationCallback(Callback):
 
         # Batch generate all samples in this batch (with timing)
         # If num_generations_per_seed > 1, we'll get multiple generations per seed
+        prompt_rows = self._prompt_batch_metadata(batch, process_count, dataset_key)
+        pair_seeds = ([row["generation_pair_seed"] for row in prompt_rows]
+                      if self.pairit_generation_seed is not None else None)
         with self.timing_tracker.time_operation("conditional/generation"):
             generation_start_time = time.time()
             all_generated_sequences = MoleculeGenerator.batch_generate_conditional(
                 pl_module, batch["input_ids"][:process_count], batch["attention_mask"][:process_count], 
-                temperature=self.temperature, num_generations_per_seed=self.num_generations_per_seed
+                temperature=self.temperature, num_generations_per_seed=self.num_generations_per_seed,
+                pair_seeds=pair_seeds,
             )
             generation_time = time.time() - generation_start_time
             total_generations = process_count * self.num_generations_per_seed
@@ -2327,6 +2437,7 @@ class MoleculeValidationCallback(Callback):
                         metrics_computer=cond_metrics,
                         dataset_key=dataset_key,
                         dataloader_idx=dataloader_idx,
+                        prompt_metadata=prompt_rows[seed_idx],
                     )
                 else:
                     # Lightweight path: only validity check, no metrics_computer call
@@ -3361,7 +3472,15 @@ class MoleculeValidationCallback(Callback):
               fragment_cosine_unconditional, feature_w1_macro_unconditional, fcd_unconditional
             - Sample counts: cond_pairs_count, cond_valid_count, uncond_valid_count
         """
+        if self.export_prompt_metadata:
+            import os
+            import torch.distributed as dist
+            world_size = max(int(os.environ.get("WORLD_SIZE", "1")),
+                             dist.get_world_size() if dist.is_initialized() else 1)
+            if world_size != 1:
+                raise ValueError("Complete prompt export currently requires single-process evaluation")
         module.eval()
+        self._prompt_requests = {}
 
         # Reset metrics computers for fresh evaluation
         self.conditional_metrics.reset()
@@ -3400,13 +3519,17 @@ class MoleculeValidationCallback(Callback):
                 if total_cond_samples >= num_conditional_samples:
                     break
 
-                input_ids = batch["input_ids"]
-                attention_mask = batch["attention_mask"]
+                count = min(len(batch["input_ids"]), num_conditional_samples - total_cond_samples)
+                input_ids = batch["input_ids"][:count]
+                attention_mask = batch["attention_mask"][:count]
                 batch_size = input_ids.shape[0]
+                prompt_rows = self._prompt_batch_metadata(batch, count)
+                pair_seeds = ([row["generation_pair_seed"] for row in prompt_rows]
+                              if self.pairit_generation_seed is not None else None)
 
                 generated_list = MoleculeGenerator.batch_generate_conditional(
                     module, input_ids, attention_mask, temperature=self.temperature, 
-                    num_generations_per_seed=self.num_generations_per_seed
+                    num_generations_per_seed=self.num_generations_per_seed, pair_seeds=pair_seeds,
                 )
 
                 valid_generations = 0
@@ -3432,7 +3555,9 @@ class MoleculeValidationCallback(Callback):
                     
                     # Note: Function returns (is_valid, flags, is_memorized, canonical_gen)
                     is_valid, flags, is_memorized, canonical_gen = self._process_conditional_generation_sample_post_generation(
-                        module, inp_ids, attn_mask, gen_seq, batch_idx, seed_idx, 0.0, neighbors_smiles=None, generation_idx=generation_idx
+                        module, inp_ids, attn_mask, gen_seq, batch_idx, seed_idx, 0.0,
+                        neighbors_smiles=None, generation_idx=generation_idx,
+                        prompt_metadata=prompt_rows[seed_idx],
                     )
                     if is_valid:
                         valid_generations += 1
@@ -3509,20 +3634,8 @@ class MoleculeValidationCallback(Callback):
                         total_relevant_cond_by_ref[ref_name] += batch_relevant_by_ref[ref_name]
                         for key in total_relevancy_details_cond_by_ref[ref_name]:
                             total_relevancy_details_cond_by_ref[ref_name][key] += batch_relevancy_details_by_ref[ref_name][key]
-                # Respect num_conditional_samples cap
-                # Note: total_cond_samples tracks the number of seeds, not total generations
-                remaining = num_conditional_samples - total_cond_samples
-                if remaining <= 0:
-                    break
-                # If we processed full batch, add batch_size; otherwise scale valid count
-                if batch_size <= remaining:
-                    total_cond_samples += batch_size
-                else:
-                    # Scale valid_generations proportionally for the partial slice
-                    scale = remaining / batch_size
-                    total_cond_valid += int(valid_generations * scale)
-                    total_cond_samples += remaining
-                    break
+                # The input batch was sliced to the remaining seed budget above.
+                total_cond_samples += batch_size
 
             # Flush conditional samples
             if self.save_generated_samples:
@@ -3532,8 +3645,7 @@ class MoleculeValidationCallback(Callback):
 
         # Compute conditional fraction
         if total_cond_samples > 0:
-            effective_samples = min(total_cond_samples, num_conditional_samples)
-            cond_fraction = total_cond_valid / effective_samples
+            cond_fraction = total_cond_valid / (total_cond_samples * self.num_generations_per_seed)
         else:
             cond_fraction = 0.0
         

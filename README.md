@@ -17,6 +17,8 @@ Matched Pairs*.
 - [Reproduce paper evaluation from shipped generations](#reproduce-paper-evaluation-from-shipped-generations)
 - [Train a PairIT variant](#train-a-pairit-variant)
 - [Generate from a trained checkpoint](#generate-from-a-trained-checkpoint)
+- [Signed property prompting](#signed-property-prompting)
+- [Unit tests](#unit-tests)
 - [Evaluate your own generations](#evaluate-your-own-generations)
 - [Repository layout](#repository-layout)
 - [Citation](#citation)
@@ -190,6 +192,30 @@ pairit_beam_search \
 Both commands write per-generation CSVs / parquets in the canonical schema
 consumed by `pairit_eval`.
 
+## Signed property prompting
+
+The explicit `property_prompting_signed` training recipe and
+`prompted_pair_evaluate` evaluation recipe support signed magnitude tokens,
+descriptor subsets, the generic `target` slot, and randomized prompt controls.
+The training recipe enables configurable property dropout at rate 0.3.
+Existing unsigned/start-value/direction recipes retain their defaults.
+
+See the [recipe guide](src/pairit/hydra_config/prompting/README.md) for required
+prepared data, saved bin limits, checkpoint arguments and output paths. The
+[prompt format](src/pairit/prompting/README.md) documents token compatibility.
+Evaluation retains every attempt, including invalid and empty outputs, with
+an ordered-pair ID, original raw target values and actual input bins. Its
+companion request file records inputs visited before generation; compare it
+with an independently prepared cohort when checking complete dataset coverage.
+Prompt export currently requires one dataset and one process per evaluation.
+
+The [prompting evaluator](src/pairit/eval/README.md) reuses existing molecular
+calculations and adds the raw-attempt, per-request reductions. It requires an
+explicit expected request roster and training novelty reference; activity
+evaluation additionally requires an explicit training-only oracle. It reports
+missing-score counts and uses finite-only MSE. Existing general evaluation
+and selection metrics are unchanged.
+
 ## Evaluate your own generations
 
 Point `pairit_eval` at your generation output:
@@ -209,6 +235,21 @@ Metrics reported: `valid`, `improved`, `novel`, `v_n_i` (VIN), `sim_seed`,
 `unique`, `qed`, `internal_diversity`, and distribution metrics (FCD,
 SNN, fragment/scaffold cosine, coverage) if the `--distribution` flag is
 passed to the CLI.
+
+## Unit tests
+
+Run the test selection CI runs, from the repository root:
+
+```bash
+pytest -vv -s tests/ -m "not slow" --disable-warnings
+```
+
+This excludes the slow training and evaluation smoke tests (which need the
+`assets/` bundle) but still imports their modules. Collect the whole test
+directory rather than individual files: single files can miss import
+interactions, including ones that only surface in spawned DataLoader workers.
+Shared test helpers use package-relative imports and must not prepend `tests/`
+to `sys.path` — doing so makes `tests/pairit/` shadow the installed package.
 
 ## Repository layout
 

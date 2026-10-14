@@ -1,0 +1,8 @@
+# @package data.prompting
+# Descriptor-only evaluation: an unmapped training proxy is not an assay target.
+defaults:
+  - signed_zinc@_here_
+  - _self_
+
+properties:
+  names: [logp, qed, sa, mw, tpsa, hbd, hba, rotatable_bonds, frac_sp3_c]

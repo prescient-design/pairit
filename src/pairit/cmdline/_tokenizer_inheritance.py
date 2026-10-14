@@ -4,7 +4,7 @@ Tokenizer inheritance utilities for checkpoint compatibility.
 When loading from a checkpoint, the checkpoint may contain special tokens (e.g., property prompt
 tokens) that the current config doesn't define. This module provides utilities to:
 
-1. Extract special tokens from a checkpoint's tokenizer
+1. Extract the full vocabulary and added tokens from a checkpoint's tokenizer
 2. Validate that bin widths are compatible between checkpoint and current config
 3. Prepare the tokenizer config to inherit tokens from the checkpoint
 
@@ -43,6 +43,9 @@ def extract_checkpoint_tokenizer_info(ckpt_path: str) -> dict:
         - error: str | None - error message if failed
         - vocab_size: int | None - tokenizer vocabulary size
         - additional_special_tokens: list[str] - list of additional special tokens
+        - token_ids: dict[str, int] - complete saved vocabulary, for ID validation
+        - added_tokens: list[str] - all added tokens in saved ID order
+        - embedding_rows: dict[str, int] - checked input/output embedding sizes
         - value_bin_widths: set[int] - detected widths for value bin tokens
         - delta_bin_widths: set[int] - detected widths for delta bin tokens
         - distance_bin_widths: set[int] - detected widths for distance bin tokens
@@ -53,8 +56,12 @@ def extract_checkpoint_tokenizer_info(ckpt_path: str) -> dict:
         "error": None,
         "vocab_size": None,
         "additional_special_tokens": [],
+        "token_ids": {},
+        "added_tokens": [],
+        "embedding_rows": {},
         "value_bin_widths": set(),
         "delta_bin_widths": set(),
+        "signed_delta_bin_widths": set(),
         "distance_bin_widths": set(),
         "property_names": set(),
     }
@@ -90,12 +97,59 @@ def extract_checkpoint_tokenizer_info(ckpt_path: str) -> dict:
         result["error"] = "No tokenizer found in transform_fn"
         return result
 
-    # Extract info
-    result["vocab_size"] = len(tokenizer.get_vocab())
-    result["additional_special_tokens"] = list(tokenizer.additional_special_tokens or [])
+    # additional_special_tokens can omit earlier registrations in historical
+    # checkpoints. The backend's added vocabulary/decoder still retains them.
+    vocab = tokenizer.get_vocab()
+    if (
+        not vocab
+        or any(not isinstance(i, int) or isinstance(i, bool) for i in vocab.values())
+        or sorted(vocab.values()) != list(range(len(vocab)))
+    ):
+        result["error"] = "Checkpoint tokenizer IDs must be unique and contiguous from zero"
+        return result
+    added_vocab = tokenizer.get_added_vocab()
+    if any(vocab.get(tok) != idx for tok, idx in added_vocab.items()):
+        result["error"] = "Checkpoint added vocabulary disagrees with full vocabulary IDs"
+        return result
+    added_tokens = sorted(added_vocab, key=added_vocab.get)
+    decoder = tokenizer.added_tokens_decoder
+    special = set(tokenizer.all_special_tokens)
+    special.update(tok for tok in added_tokens if getattr(decoder.get(vocab[tok]), "special", False))
+    # The inherited config stores token strings. Refuse custom matching behavior
+    # that cannot be reconstructed from those strings instead of changing it.
+    for tok in added_tokens:
+        metadata = decoder.get(vocab[tok])
+        if metadata is not None and (
+            metadata.single_word or metadata.lstrip or metadata.rstrip
+            or metadata.normalized != (tok not in special)
+        ):
+            result["error"] = f"Unsupported custom added-token matching options for {tok!r}"
+            return result
+    result["vocab_size"] = len(vocab)
+    result["token_ids"] = dict(vocab)
+    result["added_tokens"] = added_tokens
+    result["additional_special_tokens"] = [tok for tok in added_tokens if tok in special]
+
+    # These are the CLM input/output vocabulary matrices, including LoRA wrappers.
+    # Padded matrices are allowed, but every saved token must have a learned row.
+    for key, tensor in checkpoint.get("state_dict", {}).items():
+        if key.endswith(("embed_tokens.weight", "lm_head.weight")):
+            if tensor.ndim != 2 or tensor.shape[0] < len(vocab):
+                result["error"] = (
+                    f"Checkpoint {key} shape {tuple(tensor.shape)} cannot represent "
+                    f"the saved {len(vocab)}-token vocabulary"
+                )
+                return result
+            result["embedding_rows"][key] = int(tensor.shape[0])
+    if not all(
+        any(key.endswith(suffix) for key in result["embedding_rows"])
+        for suffix in ("embed_tokens.weight", "lm_head.weight")
+    ):
+        result["error"] = "Checkpoint is missing CLM input/output vocabulary matrices; ID alignment is unverified"
+        return result
 
     # Analyze tokens to extract bin widths and property names
-    for tok in result["additional_special_tokens"]:
+    for tok in added_tokens:
         # Value bins: <p0_{name}_{bin}>
         match = re.match(r'^<p0_([^_]+(?:_[^_]+)*)_(\d+)>$', tok)
         if match:
@@ -110,6 +164,13 @@ def extract_checkpoint_tokenizer_info(ckpt_path: str) -> dict:
             prop_name, bin_idx = match.groups()
             result["property_names"].add(prop_name)
             result["delta_bin_widths"].add(len(bin_idx))
+            continue
+
+        match = re.match(r'^<psd_(.+)_(\d+)>$', tok)
+        if match:
+            prop_name, bin_idx = match.groups()
+            result["property_names"].add(prop_name)
+            result["signed_delta_bin_widths"].add(len(bin_idx))
             continue
 
         # Distance bins: <d_{bin}>
@@ -148,6 +209,7 @@ def compute_bin_widths_from_config(cfg: DictConfig) -> dict:
     result = {
         "value_width": None,
         "delta_width": None,
+        "signed_delta_width": None,
         "distance_width": None,
     }
 
@@ -159,10 +221,13 @@ def compute_bin_widths_from_config(cfg: DictConfig) -> dict:
             if prop_tokens:
                 num_value_bins = int(prop_tokens.get("num_value_bins", 0) or 0)
                 num_delta_bins = int(prop_tokens.get("num_delta_bins", 0) or 0)
+                num_signed_bins = int(prop_tokens.get("num_signed_delta_bins", 0) or 0)
                 if num_value_bins > 0:
                     result["value_width"] = max(2, len(str(num_value_bins - 1)))
                 if num_delta_bins > 0:
                     result["delta_width"] = max(2, len(str(num_delta_bins - 1)))
+                if num_signed_bins > 0:
+                    result["signed_delta_width"] = max(2, len(str(num_signed_bins - 1)))
 
         # Distance tokens
         if tokenizer_cfg.get("add_distance_prompt_tokens", False):
@@ -225,6 +290,15 @@ def validate_bin_width_compatibility(
                 f"This would create duplicate tokens with different formats. "
                 f"Ensure num_delta_bins produces the same width."
             )
+
+    signed_widths = ckpt_info.get("signed_delta_bin_widths", set())
+    signed_width = config_widths.get("signed_delta_width")
+    if signed_widths and signed_width is not None and signed_width not in signed_widths:
+        issues.append(
+            f"Signed delta bin width mismatch: checkpoint uses width(s) {signed_widths}, "
+            f"but current config would use width {signed_width}. "
+            "Ensure num_signed_delta_bins produces the same width."
+        )
 
     # Distance bin widths
     ckpt_distance_widths = ckpt_info.get("distance_bin_widths", set())
@@ -302,11 +376,10 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
     ckpt_info = extract_checkpoint_tokenizer_info(ckpt_path)
 
     if not ckpt_info["success"]:
-        _print(f"\n⚠️  Could not extract tokenizer from checkpoint: {ckpt_info['error']}")
-        _print("    Proceeding without token inheritance (this may cause issues if checkpoint has special tokens)")
-        summary["issues"].append(f"Could not extract tokenizer: {ckpt_info['error']}")
-        _print("=" * 70 + "\n")
-        return summary
+        raise ValueError(
+            f"Cannot inherit tokenizer from checkpoint {ckpt_path}: {ckpt_info['error']}. "
+            "Refusing to load learned embeddings with unverified token IDs."
+        )
 
     _print(f"\nCheckpoint tokenizer:")
     _print(f"  Vocab size: {ckpt_info['vocab_size']}")
@@ -314,13 +387,8 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
 
     summary["checkpoint_vocab_size"] = ckpt_info["vocab_size"]
 
-    if not ckpt_info["additional_special_tokens"]:
-        _print("\n✓ Checkpoint has no additional special tokens to inherit.")
-        _print("=" * 70 + "\n")
-        return summary
-
     # Categorize checkpoint tokens
-    ckpt_tokens = ckpt_info["additional_special_tokens"]
+    ckpt_tokens = ckpt_info["added_tokens"]
     dataset_tokens = [t for t in ckpt_tokens if t.startswith('<ds')]
     property_tokens = [t for t in ckpt_tokens if t.startswith('<p') and not t.startswith('<pad')]
     distance_tokens = [t for t in ckpt_tokens if t.startswith('<d') and not t.startswith('<ds')]
@@ -337,6 +405,8 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
             _print(f"    Value bin width(s): {ckpt_info['value_bin_widths']}")
         if ckpt_info["delta_bin_widths"]:
             _print(f"    Delta bin width(s): {ckpt_info['delta_bin_widths']}")
+        if ckpt_info["signed_delta_bin_widths"]:
+            _print(f"    Signed delta bin width(s): {ckpt_info['signed_delta_bin_widths']}")
     if distance_tokens:
         _print(f"    Distance prompt tokens: {len(distance_tokens)}")
         if ckpt_info["distance_bin_widths"]:
@@ -350,6 +420,7 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
     _print(f"\n  Current config bin widths:")
     _print(f"    Value: {config_widths['value_width']}")
     _print(f"    Delta: {config_widths['delta_width']}")
+    _print(f"    Signed delta: {config_widths['signed_delta_width']}")
     _print(f"    Distance: {config_widths['distance_width']}")
 
     # Validate compatibility (this will raise if strict=True and there's a mismatch)
@@ -379,8 +450,10 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
                 prop_names = sorted(set(str(p) for p in (prop_cfg.get("property_names") or [])))
                 num_value = int(prop_cfg.get("num_value_bins", 0) or 0)
                 num_delta = int(prop_cfg.get("num_delta_bins", 0) or 0)
+                num_signed = int(prop_cfg.get("num_signed_delta_bins", 0) or 0)
                 v_width = max(2, len(str(num_value - 1))) if num_value > 0 else 2
                 d_width = max(2, len(str(num_delta - 1))) if num_delta > 0 else 2
+                s_width = max(2, len(str(num_signed - 1))) if num_signed > 0 else 2
 
                 current_would_generate.add("<pc>")
                 current_would_generate.update(["<pdir_up>", "<pdir_down>", "<pdir_any>"])
@@ -390,6 +463,10 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
                         current_would_generate.add(f"<p0_{name}_{b:0{v_width}d}>")
                     for b in range(num_delta):
                         current_would_generate.add(f"<pd_{name}_{b:0{d_width}d}>")
+                        current_would_generate.add(f"<pdmax_{name}_{b:0{d_width}d}>")
+                        current_would_generate.add(f"<pdmin_{name}_{b:0{d_width}d}>")
+                    for b in range(num_signed):
+                        current_would_generate.add(f"<psd_{name}_{b:0{s_width}d}>")
 
         # Distance tokens
         if tokenizer_cfg.get("add_distance_prompt_tokens", False):
@@ -448,13 +525,14 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
 
     # Inject inherited tokens into config
     with open_dict(cfg):
-        cfg.data.transform_fn.tokenizer.inherit_special_tokens = list(ckpt_tokens)
+        cfg.data.transform_fn.tokenizer.inherit_special_tokens = ckpt_info["additional_special_tokens"]
+        cfg.data.transform_fn.tokenizer.inherit_token_ids = ckpt_info["token_ids"]
 
     summary["inherited"] = True
     summary["num_tokens_inherited"] = len(ckpt_tokens)
 
-    _print(f"\n✓ Configured tokenizer to inherit {len(ckpt_tokens)} special tokens from checkpoint.")
-    _print(f"  Final vocab will have: {len(ckpt_token_set | current_would_generate)} special tokens")
+    _print(f"\n✓ Configured tokenizer to inherit {len(ckpt_tokens)} added tokens from checkpoint.")
+    _print(f"  Verified vocabulary matrix sizes: {ckpt_info['embedding_rows']}")
     _print("=" * 70 + "\n")
 
     return summary

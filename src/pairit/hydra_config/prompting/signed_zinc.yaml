@@ -1,0 +1,25 @@
+# @package data.prompting
+# Explicit signed-bin recipe; existing legacy prompting defaults are unchanged.
+defaults:
+  - zinc_all_props@_here_
+  - _self_
+
+properties:
+  names: [logp, qed, sa, mw, tpsa, hbd, hba, rotatable_bonds, frac_sp3_c, target]
+  include:
+    start_value: "off"
+    direction: false
+    magnitude: signed_bin
+    property_dropout:
+      enabled: true
+      rate: 0.3
+  # Unmapped target mirrors a descriptor and its binning during pretraining.
+  source:
+    column_map:
+      target: null
+  value_binning:
+    per_property:
+      target: {range: [-0.05, 1.05]}
+  delta_binning:
+    per_property:
+      target: {range: [0.0, 1.05]}

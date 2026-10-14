@@ -23,8 +23,10 @@ from pairit.prompting.property_prompting import (
     ParsedPropertyPrompt,
     build_property_prompt_text,
     delta_to_bin,
+    signed_delta_to_bin,
     value_to_bin,
 )
+from pairit.prompting.metadata import prompt_metadata, stable_prompt_seed
 from pairit.prompting.distance_prompting import (
     DistanceDistributionParams,
     build_distance_prompt_text,
@@ -147,6 +149,7 @@ class MoleculeImprovementDataset(Dataset):
         max_pairs_to_load: Optional[int] = None,
         keep_original_ordering: bool = False,  # If True, preserve the ordering of pairs from the parquet file, overriding epsilon-based ordering or other behavior
         utility_negate: bool = False,  # If True, negate utility values after reading from column. Use when the column scale is inverted relative to the desired improvement direction (e.g., ZINC 'sa' column is ~0-1 higher=better, but RDKit SA is ~1-10 lower=better).
+        is_training: bool = True,  # Prompt dropout/bounded-delta augmentation applies only to training datasets.
     ):
         """
         Initialize the dataset.
@@ -194,6 +197,7 @@ class MoleculeImprovementDataset(Dataset):
         self.max_num_occurrences_criterion = max_num_occurrences_criterion if max_num_occurrences_criterion is not None else "first"
         self.dataset_id = int(dataset_id)
         self.use_dataset_identity_prompt = bool(use_dataset_identity_prompt)
+        self._is_training = bool(is_training)
         
         # Set ignore_pairs and split early so they're available for distance prompting validation
         self.ignore_pairs = ignore_pairs
@@ -249,6 +253,7 @@ class MoleculeImprovementDataset(Dataset):
         self._prop_include_direction: bool = True
         self._prop_include_magnitude: str = "bin"  # off|bin|literal (literal not implemented)
         self._prop_randomize_tokens: bool = False  # If True, replace property tokens with random values (ablation)
+        self._prop_export_metadata = False
         self._prop_prefer_columns: bool = True
         self._prop_compute_if_missing: bool = True
         self._prop_column_map: dict[str, str] = {}
@@ -271,7 +276,9 @@ class MoleculeImprovementDataset(Dataset):
         self._prop_bounded_delta_fraction: float = 0.0
         self._prop_bounded_delta_mode: str = "both"
         self._prop_selection_explicit_names: list[str] = []
-        self._current_epoch: int = 0
+        # Spawned persistent workers retain their Dataset copy. A shared scalar
+        # makes parent epoch updates visible without restarting the workers.
+        self._epoch_state = torch.zeros((), dtype=torch.long).share_memory_()
 
         try:
             prop_cfg = (self._prompting or {}).get("properties", None) or {}
@@ -294,6 +301,7 @@ class MoleculeImprovementDataset(Dataset):
                 
                 # Randomization ablation: replace property tokens with random values
                 self._prop_randomize_tokens = bool(prop_cfg.get("randomize_tokens", False))
+                self._prop_export_metadata = bool(prop_cfg.get("export_metadata", False))
 
                 # Property dropout config (drop entire properties from prompt)
                 prop_dropout_cfg = inc.get("property_dropout", None) or {}
@@ -321,6 +329,8 @@ class MoleculeImprovementDataset(Dataset):
                 self._eval_override_direction = str(_evo_dir) if _evo_dir is not None else None
                 _evo_delta = evo.get("delta_bin", None)
                 self._eval_override_delta_bin = int(_evo_delta) if _evo_delta is not None else None
+                _evo_signed = evo.get("signed_delta_bin", None)
+                self._eval_override_signed_delta_bin = int(_evo_signed) if _evo_signed is not None else None
                 self._eval_override_delta_mode = str(evo.get("delta_mode", "exact"))
                 self._eval_override_inc_start = bool(evo.get("include_start_value", True))
                 self._eval_override_inc_dir = bool(evo.get("include_direction", True))
@@ -334,7 +344,8 @@ class MoleculeImprovementDataset(Dataset):
                 src = prop_cfg.get("source", None) or {}
                 self._prop_prefer_columns = bool(src.get("prefer_columns", True))
                 self._prop_compute_if_missing = bool(src.get("compute_if_missing", True))
-                self._prop_column_map = {str(k): str(v) for k, v in (src.get("column_map", None) or {}).items()}
+                self._prop_column_map = {str(k): str(v) for k, v in (src.get("column_map", None) or {}).items()
+                                         if v is not None and str(v)}
                 self._prop_fallback_column_map = {str(k): str(v) for k, v in (src.get("fallback_column_map", None) or {}).items()}
 
                 vb = prop_cfg.get("value_binning", None) or {}
@@ -1430,6 +1441,15 @@ class MoleculeImprovementDataset(Dataset):
             "dataset_id": torch.tensor(self.dataset_id, dtype=torch.long),
         }
 
+        if self._prop_export_metadata:
+            if self.ignore_pairs or self.just_first:
+                raise ValueError("Prompt metadata export requires paired conditional examples")
+            res["prompt_metadata"] = prompt_metadata(
+                smiles1, smiles2,
+                self._build_property_prompts(smiles1=smiles1, smiles2=smiles2),
+                self._build_property_prompts(smiles1=smiles1, smiles2=smiles2, randomize_tokens=False),
+            )
+
         return res #, [] # as label # removing this
 
     # ---------------- distance prompt helpers ----------------
@@ -1746,7 +1766,7 @@ class MoleculeImprovementDataset(Dataset):
             # Currently only bin-based prompting is supported; literal numeric prompting can be added later.
             if self._prop_include_start_value not in ("off", "bin"):
                 raise ValueError(f"Unsupported prompting.properties.include.start_value={self._prop_include_start_value!r}")
-            if self._prop_include_magnitude not in ("off", "bin"):
+            if self._prop_include_magnitude not in ("off", "bin", "signed_bin"):
                 raise ValueError(f"Unsupported prompting.properties.include.magnitude={self._prop_include_magnitude!r}")
 
             prompts = self._build_property_prompts(smiles1=smiles1, smiles2=smiles2)
@@ -1880,18 +1900,25 @@ class MoleculeImprovementDataset(Dataset):
 
         return None
 
+    @property
+    def _current_epoch(self) -> int:
+        return int(self._epoch_state.item())
+
     def set_epoch(self, epoch: int) -> None:
-        """Set the current epoch for epoch-varying component dropout."""
-        self._current_epoch = epoch
+        """Update dropout's epoch in the parent and persistent worker copies."""
+        self._epoch_state.fill_(int(epoch))
 
-    def _build_property_prompts(self, *, smiles1: str, smiles2: Optional[str]) -> list[ParsedPropertyPrompt]:
+    def _build_property_prompts(
+        self, *, smiles1: str, smiles2: Optional[str], randomize_tokens: bool | None = None,
+    ) -> list[ParsedPropertyPrompt]:
         names = list(self._prop_names)
-        # deterministic selection
-        import random
-        import hashlib
-
-        stable = int(hashlib.sha1(smiles1.encode("utf-8")).hexdigest()[:8], 16)
-        r = random.Random(int(self._prop_selection_seed) + int(self.dataset_id) * 10_000 + stable)
+        use_randomized_tokens = self._prop_randomize_tokens if randomize_tokens is None else randomize_tokens
+        stable = (stable_prompt_seed("prompt_source", smiles1) if smiles2 is None
+                  else stable_prompt_seed("prompt_pair", smiles1, smiles2))
+        row_seed = int(self._prop_selection_seed) + int(self.dataset_id) * 10_000 + stable
+        r = random.Random(row_seed)
+        # Drawing random bins must not change selection or the target proxy.
+        token_random = random.Random(row_seed + 1_000_000_007)
         if self._prop_selection_mode == "all":
             chosen = names
         elif self._prop_selection_mode == "explicit":
@@ -1905,40 +1932,52 @@ class MoleculeImprovementDataset(Dataset):
         # Property dropout: independently drop each chosen property with some probability.
         # This allows the model to see 0, 1, ..., N properties during training so it can
         # handle any subset at inference time.
-        if (self._prop_property_dropout_enabled
+        if (self._is_training and self._prop_property_dropout_enabled
                 and not self._eval_override_enabled
                 and not self._prop_randomize_tokens):
-            epoch_offset = self._current_epoch * 7919 if self._prop_component_dropout_epoch_vary else 0
+            epoch_offset = self._current_epoch if self._prop_component_dropout_epoch_vary else 0
             chosen = [
                 p for p in chosen
-                if random.Random(stable + epoch_offset + hash(p) + 999).random() >= self._prop_property_dropout_rate
+                if random.Random(stable_prompt_seed("property_dropout", row_seed, epoch_offset, p)).random()
+                >= self._prop_property_dropout_rate
             ]
 
-        # compute values
-        props1 = self._get_properties_for_smiles(smiles1, chosen)
-        props2 = self._get_properties_for_smiles(smiles2, chosen) if smiles2 else {}
+        target_is_mapped = self._prop_column_map.get("target") not in (None, "", "target")
+        real_names = [p for p in names if p != "target"]
+        requested = [p for p in chosen if p != "target" or target_is_mapped]
+        if "target" in chosen and not target_is_mapped:
+            if not real_names:
+                raise ValueError("Unmapped target needs at least one descriptor to mirror")
+            requested = sorted(set(requested) | set(real_names))
+        props1 = self._get_properties_for_smiles(smiles1, requested)
+        props2 = self._get_properties_for_smiles(smiles2, requested) if smiles2 else {}
 
         out: list[ParsedPropertyPrompt] = []
         for p in chosen:
             start_bin = None
             direction: Optional[str] = None
             delta_bin = None
+            signed_delta_bin = None
 
-            v1 = props1.get(p, None)
-            v2 = props2.get(p, None)
+            p_for_binning = r.choice(real_names) if p == "target" and not target_is_mapped else p
+            v1 = props1.get(p_for_binning)
+            v2 = props2.get(p_for_binning)
+            raw_delta = float(v2) - float(v1) if v1 is not None and v2 is not None else None
+            raw_direction = (None if raw_delta is None else
+                             "up" if raw_delta > 0 else "down" if raw_delta < 0 else "any")
 
             if self._prop_include_start_value == "bin":
-                vb = self._value_binning_per_prop.get(p, self._value_binning_default)
+                vb = self._value_binning_per_prop.get(p_for_binning, self._value_binning_default)
                 if vb is None:
                     raise ValueError("value binning config missing")
                 if vb.mode == "inferred" and vb.range is None:
-                    vb = self._infer_binning_range(vb, prop_name=p, kind="value")
+                    vb = self._infer_binning_range(vb, prop_name=p_for_binning, kind="value")
 
                 if self._eval_override_enabled and self._eval_override_start_bin is not None:
                     start_bin = self._eval_override_start_bin
-                elif self._prop_randomize_tokens:
+                elif use_randomized_tokens:
                     # Randomize start_bin: random value from 0 to num_bins-1
-                    start_bin = r.randint(0, vb.num_bins - 1)
+                    start_bin = token_random.randint(0, vb.num_bins - 1)
                 elif v1 is not None:
                     start_bin = value_to_bin(binning=vb, value=float(v1))
                 else:
@@ -1947,9 +1986,9 @@ class MoleculeImprovementDataset(Dataset):
             if self._prop_include_direction:
                 if self._eval_override_enabled and self._eval_override_direction is not None:
                     direction = self._eval_override_direction
-                elif self._prop_randomize_tokens:
+                elif use_randomized_tokens:
                     # Randomize direction: random choice from ["up", "down", "any"]
-                    direction = r.choice(["up", "down", "any"])
+                    direction = token_random.choice(["up", "down"])
                 elif v1 is not None and v2 is not None:
                     d = float(v2) - float(v1)
                     if d > 0:
@@ -1962,21 +2001,35 @@ class MoleculeImprovementDataset(Dataset):
                     direction = "any"
 
             if self._prop_include_magnitude == "bin":
-                db = self._delta_binning_per_prop.get(p, self._delta_binning_default)
+                db = self._delta_binning_per_prop.get(p_for_binning, self._delta_binning_default)
                 if db is None:
                     raise ValueError("delta binning config missing")
                 if db.mode == "inferred" and db.range is None:
-                    db = self._infer_binning_range(db, prop_name=p, kind="delta")
+                    db = self._infer_binning_range(db, prop_name=p_for_binning, kind="delta")
 
                 if self._eval_override_enabled and self._eval_override_delta_bin is not None:
                     delta_bin = self._eval_override_delta_bin
-                elif self._prop_randomize_tokens:
+                elif use_randomized_tokens:
                     # Randomize delta_bin: random value from 0 to num_bins-1
-                    delta_bin = r.randint(0, db.num_bins - 1)
+                    delta_bin = token_random.randint(0, db.num_bins - 1)
                 elif v1 is not None and v2 is not None:
                     delta_bin = delta_to_bin(binning=db, delta=float(v2) - float(v1), magnitude=True)
                 else:
                     delta_bin = None
+            elif self._prop_include_magnitude == "signed_bin":
+                db = self._delta_binning_per_prop.get(p_for_binning, self._delta_binning_default)
+                if db is None:
+                    raise ValueError("delta binning config missing")
+                if db.mode == "inferred" and db.range is None:
+                    db = self._infer_binning_range(db, prop_name=p_for_binning, kind="delta")
+                if self._eval_override_enabled and self._eval_override_signed_delta_bin is not None:
+                    signed_delta_bin = self._eval_override_signed_delta_bin
+                    if not 0 <= signed_delta_bin < db.num_bins:
+                        raise ValueError("signed_delta_bin override is outside the configured bins")
+                elif use_randomized_tokens:
+                    signed_delta_bin = token_random.randint(0, db.num_bins - 1)
+                elif raw_delta is not None:
+                    signed_delta_bin = signed_delta_to_bin(binning=db, delta=raw_delta)
 
             # --- Eval override: component dropping and delta_mode ---
             delta_mode: str = "exact"
@@ -1988,12 +2041,13 @@ class MoleculeImprovementDataset(Dataset):
                     direction = None
                 if not self._eval_override_inc_mag:
                     delta_bin = None
+                    signed_delta_bin = None
                 # Skip component dropout and bounded delta (training-only)
             else:
                 # --- Per-property component dropout ---
-                if self._prop_component_dropout_enabled and not self._prop_randomize_tokens:
-                    epoch_offset = self._current_epoch * 7919 if self._prop_component_dropout_epoch_vary else 0
-                    dr = random.Random(stable + epoch_offset + hash(p))
+                if self._is_training and self._prop_component_dropout_enabled and not self._prop_randomize_tokens:
+                    epoch_offset = self._current_epoch if self._prop_component_dropout_epoch_vary else 0
+                    dr = random.Random(stable_prompt_seed("component_dropout", row_seed, epoch_offset, p))
                     rate = self._prop_component_dropout_rate
                     if dr.random() < rate:
                         start_bin = None
@@ -2001,6 +2055,7 @@ class MoleculeImprovementDataset(Dataset):
                         direction = None
                     if dr.random() < rate:
                         delta_bin = None
+                        signed_delta_bin = None
 
                 # --- Bounded delta sampling ---
                 # When enabled, a fraction of examples replace the exact delta
@@ -2010,7 +2065,7 @@ class MoleculeImprovementDataset(Dataset):
                 # decreasing probability of looser bounds.  This matches how
                 # bounded tokens are used at inference (users specify meaningful
                 # bounds, not vacuous ones).
-                if (self._prop_bounded_delta_enabled
+                if (self._is_training and self._prop_bounded_delta_enabled
                         and delta_bin is not None
                         and not self._prop_randomize_tokens):
                     if r.random() < self._prop_bounded_delta_fraction:
@@ -2038,15 +2093,22 @@ class MoleculeImprovementDataset(Dataset):
                                 offset += 1
                             delta_bin = delta_bin - offset
 
-            out.append(ParsedPropertyPrompt(property_name=p, start_bin=start_bin, direction=direction, delta_bin=delta_bin, delta_mode=delta_mode))
+            out.append(ParsedPropertyPrompt(
+                property_name=p, start_bin=start_bin, direction=direction,
+                delta_bin=delta_bin, delta_mode=delta_mode, signed_delta_bin=signed_delta_bin,
+                raw_direction=raw_direction, raw_delta=raw_delta,
+                raw_seed_value=float(v1) if v1 is not None else None,
+                raw_target_value=float(v2) if v2 is not None else None,
+            ))
         return out
 
     def _get_properties_for_smiles(self, smiles: Optional[str], prop_names: Sequence[str]) -> dict[str, float | None]:
         if not smiles:
             return {p: None for p in prop_names}
-        if smiles in self._prop_cache:
-            cached = self._prop_cache[smiles]
-            return {p: cached.get(p, None) for p in prop_names}
+        cached = self._prop_cache.setdefault(smiles, {})
+        missing = [p for p in prop_names if p not in cached]
+        if not missing:
+            return {p: cached[p] for p in prop_names}
 
         # Try columns-backed table first (if built)
         if self._prop_from_columns is None and self._prop_prefer_columns and not self.use_multi_file:
@@ -2054,7 +2116,7 @@ class MoleculeImprovementDataset(Dataset):
 
         row = self._prop_from_columns.get(smiles, None) if self._prop_from_columns else None
         out: dict[str, float | None] = {}
-        for p in prop_names:
+        for p in missing:
             if row is not None and p in row and row[p] is not None:
                 out[p] = row[p]
                 continue
@@ -2067,8 +2129,8 @@ class MoleculeImprovementDataset(Dataset):
                 # Property cannot be computed (e.g., "Class" must come from columns)
                 out[p] = None
 
-        self._prop_cache[smiles] = dict(out)
-        return out
+        cached.update(out)
+        return {p: cached[p] for p in prop_names}
 
     def _build_property_table_from_columns(self) -> dict[str, dict[str, float | None]]:
         """
@@ -2080,7 +2142,7 @@ class MoleculeImprovementDataset(Dataset):
         import polars
 
         smiles_col = "smiles"
-        prop_to_col = {p: self._prop_column_map.get(p, p) for p in self._prop_names}
+        prop_to_col = {p: self._prop_column_map.get(p) or p for p in self._prop_names}
         # Also include fallback columns
         prop_to_fallback_col = {p: self._prop_fallback_column_map.get(p, None) for p in self._prop_names}
         fallback_cols = [c for c in prop_to_fallback_col.values() if c is not None]
@@ -2751,6 +2813,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
             val_split = None if self._seeds_only_conditional else ("val" if self._ignore_pairs else None)
             self._val_dataset = MoleculeImprovementDataset(
                 root=self._root,
+                is_training=False,
                 pair_filename=self._val_pair_filename,
                 molecule_filename=self._val_molecule_filename,
                 ignore_pairs=self._ignore_pairs,
@@ -2800,6 +2863,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
             if self._test_pair_filename is not None:
                 self._test_dataset = MoleculeImprovementDataset(
                     root=self._root,
+                    is_training=False,
                     pair_filename=self._test_pair_filename,
                     molecule_filename=self._test_molecule_filename,
                     ignore_pairs=self._ignore_pairs,
@@ -2837,6 +2901,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
             if self._test_pair_filename is not None:
                 self._test_dataset = MoleculeImprovementDataset(
                     root=self._root,
+                    is_training=False,
                     pair_filename=self._test_pair_filename,
                     molecule_filename=self._test_molecule_filename,
                     ignore_pairs=self._ignore_pairs,
@@ -2871,6 +2936,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
                 predict_val_split = None if self._seeds_only_conditional else ("val" if self._ignore_pairs else None)
                 self._test_dataset = MoleculeImprovementDataset(
                     root=self._root,
+                    is_training=False,
                     pair_filename=self._val_pair_filename,
                     molecule_filename=self._val_molecule_filename,
                     ignore_pairs=self._ignore_pairs,
@@ -2899,8 +2965,11 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
             
     def set_epoch(self, epoch: int) -> None:
         """Propagate epoch to train dataset for epoch-varying component dropout."""
-        if self._train_dataset is not None and hasattr(self._train_dataset, "set_epoch"):
-            self._train_dataset.set_epoch(epoch)
+        dataset = self._train_dataset
+        while isinstance(dataset, torch.utils.data.Subset):
+            dataset = dataset.dataset
+        if dataset is not None and hasattr(dataset, "set_epoch"):
+            dataset.set_epoch(epoch)
 
     def train_dataloader(self) -> DataLoader:
         """Create training data loader."""
@@ -3087,4 +3156,4 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
         new_train_dataset = Subset(combined_dataset, train_indices)
         new_val_dataset = Subset(combined_dataset, val_indices)
         
-        return new_train_dataset, new_val_dataset 
+        return new_train_dataset, new_val_dataset

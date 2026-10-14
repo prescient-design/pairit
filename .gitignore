@@ -81,6 +81,8 @@ results_summary.json
 test_dxt/*
 *.dxt
 .venv_test/
+.venv
+output_logs
 
 # large analysis archives — do not commit
 *.tar.gz

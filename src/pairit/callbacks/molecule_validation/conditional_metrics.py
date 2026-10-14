@@ -345,7 +345,11 @@ class ConditionalMetricsComputer(MoleculeMetricsComputer):
             # Compute prompt agreement metrics (directionality and magnitude)
             if parsed_prompts and input_props and gen_props:
                 try:
-                    from pairit.prompting.property_prompting import delta_to_bin
+                    from pairit.prompting.property_prompting import (
+                        delta_to_bin,
+                        signed_bin_to_range,
+                        signed_delta_to_bin,
+                    )
                     
                     prompt_agreement = {}
                     for prompt in parsed_prompts:
@@ -361,14 +365,36 @@ class ConditionalMetricsComputer(MoleculeMetricsComputer):
                         actual_delta = float(gen_val - seed_val)
                         direction_match = None
                         magnitude_match = None
+
+                        delta_binning = delta_binning_default
+                        if delta_binning_by_property is not None:
+                            delta_binning = delta_binning_by_property.get(prop_name, delta_binning_default)
+                        signed_prompt_bin = getattr(prompt, "signed_delta_bin", None)
+                        prompted_direction = prompt.direction
+                        if signed_prompt_bin is not None:
+                            raw_direction = getattr(prompt, "raw_direction", None)
+                            if raw_direction is not None:
+                                # Exact zero has no requested direction. A small
+                                # positive raw delta in bin 08 still counts as up.
+                                prompted_direction = None if raw_direction == "any" else raw_direction
+                            elif prompted_direction is None and delta_binning is not None:
+                                lo, hi = signed_bin_to_range(
+                                    binning=delta_binning, bin_idx=signed_prompt_bin
+                                )
+                                if lo > 0:
+                                    prompted_direction = "up"
+                                elif hi <= 0:
+                                    prompted_direction = "down"
+                                # A token-only interval containing zero cannot
+                                # distinguish zero from a small positive request.
                         
                         # Check directionality agreement
-                        if prompt.direction is not None:
-                            if prompt.direction == "up":
+                        if prompted_direction is not None:
+                            if prompted_direction == "up":
                                 direction_match = actual_delta > 0.0
-                            elif prompt.direction == "down":
+                            elif prompted_direction == "down":
                                 direction_match = actual_delta < 0.0
-                            elif prompt.direction == "any":
+                            elif prompted_direction == "any":
                                 direction_match = True  # "any" always matches
 
                             if direction_match is not None:
@@ -389,7 +415,7 @@ class ConditionalMetricsComputer(MoleculeMetricsComputer):
                                     self.epoch_prompt_direction_memorized_by_ref[ref_name][prop_name].append(False)
 
                                 # Strict tracking: only up/down (excludes "any" which trivially matches)
-                                if prompt.direction in ("up", "down"):
+                                if prompted_direction in ("up", "down"):
                                     if prop_name not in self.epoch_prompt_direction_agreement_strict:
                                         self.epoch_prompt_direction_agreement_strict[prop_name] = []
                                         self.epoch_prompt_direction_memorized_strict[prop_name] = []
@@ -405,21 +431,23 @@ class ConditionalMetricsComputer(MoleculeMetricsComputer):
                                     on_epoch=True,
                                 )
                         
-                        # Check magnitude agreement (if delta_bin is available)
-                        if prompt.delta_bin is not None and delta_binning_by_property is not None:
-                            # Get delta binning config
-                            delta_binning = delta_binning_by_property.get(prop_name, delta_binning_default)
+                        # Reuse existing bin-agreement metrics for signed prompts.
+                        prompted_delta_bin = signed_prompt_bin if signed_prompt_bin is not None else prompt.delta_bin
+                        if prompted_delta_bin is not None:
                             if delta_binning is not None:
                                 try:
-                                    actual_delta_bin = delta_to_bin(binning=delta_binning, delta=actual_delta, magnitude=True)
+                                    if signed_prompt_bin is not None:
+                                        actual_delta_bin = signed_delta_to_bin(binning=delta_binning, delta=actual_delta)
+                                    else:
+                                        actual_delta_bin = delta_to_bin(binning=delta_binning, delta=actual_delta, magnitude=True)
                                     # Respect delta_mode for bounded prompts
                                     delta_mode = getattr(prompt, "delta_mode", "exact")
                                     if delta_mode == "atmost":
-                                        magnitude_match = (actual_delta_bin <= prompt.delta_bin)
+                                        magnitude_match = (actual_delta_bin <= prompted_delta_bin)
                                     elif delta_mode == "atleast":
-                                        magnitude_match = (actual_delta_bin >= prompt.delta_bin)
+                                        magnitude_match = (actual_delta_bin >= prompted_delta_bin)
                                     else:  # exact
-                                        magnitude_match = (actual_delta_bin == prompt.delta_bin)
+                                        magnitude_match = (actual_delta_bin == prompted_delta_bin)
                                     
                                     # Initialize lists if needed
                                     if prop_name not in self.epoch_prompt_magnitude_agreement:
@@ -445,10 +473,10 @@ class ConditionalMetricsComputer(MoleculeMetricsComputer):
 
                                     # Store bins for random baseline computation
                                     self.epoch_prompt_actual_bins[prop_name].append(actual_delta_bin)
-                                    self.epoch_prompt_prompted_bins[prop_name].append(prompt.delta_bin)
+                                    self.epoch_prompt_prompted_bins[prop_name].append(prompted_delta_bin)
 
                                     # Store bin error (actual_bin - prompt_bin)
-                                    bin_error = actual_delta_bin - prompt.delta_bin
+                                    bin_error = actual_delta_bin - prompted_delta_bin
                                     self.epoch_prompt_magnitude_bin_errors[prop_name].append(bin_error)
                                     # Placeholder for memorization - will be updated when memorization is checked
                                     self.epoch_prompt_magnitude_bin_errors_memorized[prop_name].append(False)

@@ -10,6 +10,8 @@ from .property_prompting import (
     format_property_prompt_summary,
     build_property_prompt_text,
     delta_to_bin,
+    signed_delta_to_bin,
+    signed_bin_to_range,
     parse_property_prompt_from_ids,
     value_to_bin,
 )
@@ -32,6 +34,8 @@ __all__ = [
     "bin_to_range",
     "value_to_bin",
     "delta_to_bin",
+    "signed_delta_to_bin",
+    "signed_bin_to_range",
     "build_property_prompt_text",
     "parse_property_prompt_from_ids",
     "format_property_prompt_summary",

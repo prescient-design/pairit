@@ -1,0 +1,69 @@
+# Explicit raw-attempt export. Reuse the same prompting profile as training.
+defaults:
+  - data@datamodule: molecule_improvement
+  - prompting@datamodule.prompting: signed_zinc_eval
+  - _self_
+
+output_dir: ???
+dataset: ???
+split: test
+
+hydra:
+  run:
+    dir: ${output_dir}/hydra
+
+datamodule:
+  root: ${oc.env:PAIRIT_PROMPT_DATA_ROOT}
+  utility_key: null
+  epsilon: 0
+  delta: null
+  keep_original_ordering: true
+  shuffle: false
+  drop_last: false
+  prompting:
+    properties:
+      export_metadata: true
+      # Evaluation mode suppresses training dropout; null overrides keep pair truth.
+      eval_override:
+        enabled: true
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${datamodule.prompting.properties.names}
+        num_value_bins: ${datamodule.prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${datamodule.prompting.properties.delta_binning.default.num_bins}
+        num_signed_delta_bins: ${datamodule.prompting.properties.delta_binning.default.num_bins}
+      add_distance_prompt_tokens: false
+
+model:
+  _target_: pairit.model.PairITCLM2
+  ckpt_path: ???
+  model_name: CLM_24M
+  max_length: 300
+  transform_fn: ${datamodule.transform_fn}
+
+callbacks:
+  - _target_: pairit.callbacks.MoleculeValidationCallback
+    prompting: ${datamodule.prompting}
+    num_unconditional_generations: 0
+    num_conditional_generations: 1000000000
+    num_conditional_metric_samples: null
+    num_generations_per_seed: 64
+    temperature: 0.5
+    pairit_generation_seed: 0
+    export_prompt_metadata: true
+    export_pairit_csv: true
+    pairit_dataset_name: ${dataset}
+    save_generated_samples: true
+    # Metadata export preserves every attempt; zero disables the visualization grid.
+    max_samples_to_save: 0
+    save_dir: ${output_dir}/generated_molecules
+    save_pdfs: false
+    generation_only: true
+    property_names: [logp, qed, sa, mw, tpsa, hbd, hba, rotatable_bonds, frac_sp3_c]
+    reference_smiles_files: null
+
+# Prompting reductions consume the raw export and an explicit novelty reference.
+pairit_eval:
+  enabled: false

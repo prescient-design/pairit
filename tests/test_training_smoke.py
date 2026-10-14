@@ -34,11 +34,7 @@ from pathlib import Path
 import pytest
 import torch
 
-# smoke_test_configs lives in the same directory but tests/ is not on sys.path
-# when invoked as ``python -m pytest tests/...`` from the project root.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from smoke_test_configs import TRAINING_CONFIGS
+from .smoke_test_configs import TRAINING_CONFIGS
 
 # ---------------------------------------------------------------------------
 # Constants

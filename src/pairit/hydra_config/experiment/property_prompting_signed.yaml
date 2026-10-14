@@ -1,0 +1,38 @@
+# @package _global_
+defaults:
+  - /prompting: signed_zinc
+  - _self_
+
+seed: 0
+data:
+  # Supply prepared, split-isolated pairs explicitly. Do not reorder/filter them.
+  root: ${oc.env:PAIRIT_PROMPT_DATA_ROOT}
+  utility_key: null
+  epsilon: 0
+  delta: null
+  keep_original_ordering: true
+  drop_last: false
+  transform_fn:
+    tokenizer:
+      add_property_prompt_tokens: true
+      property_prompt_tokens:
+        property_names: ${data.prompting.properties.names}
+        num_value_bins: ${data.prompting.properties.value_binning.default.num_bins}
+        num_delta_bins: ${data.prompting.properties.delta_binning.default.num_bins}
+        num_signed_delta_bins: ${data.prompting.properties.delta_binning.default.num_bins}
+      add_distance_prompt_tokens: false
+
+model:
+  model_name: CLM_24M
+  max_length: 300
+
+paths:
+  root_dir: ${oc.env:PAIRIT_PROMPT_OUTPUT_ROOT}
+
+hydra:
+  run:
+    dir: ${paths.root_dir}/hydra/${now:%Y-%m-%d_%H-%M-%S}
+
+callbacks:
+  molecule_validation:
+    prompting: ${data.prompting}

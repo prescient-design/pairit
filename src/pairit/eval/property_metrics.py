@@ -26,7 +26,10 @@ from .config import DATASET_CONFIG
 try:
     import sascorer as _sascorer_mod
 except ImportError:
-    _sascorer_mod = None
+    try:
+        from rdkit.Contrib.SA_Score import sascorer as _sascorer_mod
+    except ImportError:
+        _sascorer_mod = None
 
 
 # ---------------------------------------------------------------------------
@@ -349,11 +352,11 @@ def compute_improvement(
     a generation can be `improvement=True` while doing the opposite of what it was
     asked. pairit_eval holds no representation of the prompt.
 
-    Prompted evaluation lives in the `lobster` repo -- `compute_direction_adherence` in
-    `notebooks/multiprop_rl_analysis.py`, with null baselines in
-    `scripts/lookup_baseline_direction_adherence.py` and `scripts/cyp_lookup_baseline.py`.
-    Those score through `pairit_eval.resolve_oracle` so thresholds and directions stay
-    consistent with the numbers computed here. See DECISIONS.md section 2.0.
+    Raw-attempt matched-pair prompting evaluation lives in
+    :func:`pairit.eval.prompted.evaluate_prompted_generations`. It requires the
+    original request truth and an independent expected request roster, and reuses
+    this module's descriptor calculations. See ``eval/README.md`` for its
+    denominators and explicit activity-oracle contract.
 
     Examples
     --------
