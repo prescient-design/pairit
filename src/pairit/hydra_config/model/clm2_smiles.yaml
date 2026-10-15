@@ -1,6 +1,5 @@
 _target_: pairit.model.PairITCLM2
 
-# this is basically the same as clm2_smiles.yaml, don't need both - JK num_validation_generations is different
 
 # Model parameters
 model_name: "CLM_150M"  # Start with smaller model for faster training

@@ -427,7 +427,7 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
     is_valid, issues = validate_bin_width_compatibility(ckpt_info, config_widths, strict=True)
     if issues:
         for issue in issues:
-            _print(f"\n⚠️  {issue}")
+            _print(f"\n{issue}")
         summary["issues"].extend(issues)
 
     # Analyze overlap with current config
@@ -479,7 +479,7 @@ def prepare_tokenizer_inheritance(cfg: DictConfig, ckpt_path: str | None, verbos
                     for b in range(num_bins):
                         current_would_generate.add(f"<d_{b:0{width}d}>")
     except Exception as e:
-        _print(f"\n⚠️  Could not analyze current config tokens: {e}")
+        _print(f"\nCould not analyze current config tokens: {e}")
         summary["issues"].append(f"Could not analyze current config: {e}")
 
     ckpt_token_set = set(ckpt_tokens)

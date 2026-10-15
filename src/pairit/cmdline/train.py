@@ -1,28 +1,3 @@
-# # --- PROBE: who is calling wandb.init? ---
-# import builtins, traceback
-# try:
-#     import wandb  # import ASAP so we can monkeypatch before others import it
-#     _orig_wandb_init = wandb.init
-#     def _spy_wandb_init(*a, **k):
-#         print("\n>>> wandb.init CALLED\n")
-#         traceback.print_stack(limit=25)
-#         return _orig_wandb_init(*a, **k)
-#     wandb.init = _spy_wandb_init
-# except Exception:
-#     pass
-
-# # --- PROBE: who constructs a Trainer (triggers GPU/TPU/HPU banner)? ---
-# try:
-#     import lightning.pytorch as pl
-#     _orig_trainer_init = pl.Trainer.__init__
-#     def _spy_trainer_init(self, *a, **k):
-#         print("\n>>> pl.Trainer.__init__ CALLED\n")
-#         traceback.print_stack(limit=25)
-#         return _orig_trainer_init(self, *a, **k)
-#     pl.Trainer.__init__ = _spy_trainer_init
-# except Exception:
-#     pass
-
 import faulthandler, signal, sys
 faulthandler.enable(all_threads=True, file=sys.stderr)
 faulthandler.register(signal.SIGUSR1, all_threads=True, file=sys.stderr)

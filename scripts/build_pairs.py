@@ -20,11 +20,24 @@ Writes next to each molecule table::
 
 MoleculeNet requires mmpdb (``pip install mmpdb``).
 
-Checked against the pair counts in Table 5 of the paper. BACE reproduces
-exactly and pair-for-pair (2546 train, 217 test). BBBP and HIV come out
-8-12% over the published counts (554 vs 512 and 1128 vs 1009 on train)
-despite identical molecule tables, most likely a difference in mmpdb
-version rather than in the recipe.
+Checked against the pair counts in Table 5 of the paper:
+
+===========  ======  =======  ===========================
+Dataset      built   paper    status
+===========  ======  =======  ===========================
+BACE train     2546     2546  identical, pair for pair
+BACE test       217      217  identical, pair for pair
+BBBP train      554      512  +8%
+HIV train      1128     1009  +12%
+===========  ======  =======  ===========================
+
+Molecule tables reproduce exactly for all three datasets and every split,
+so the BBBP/HIV gap comes from pair enumeration, not from the inputs.
+Neither the heavy-atom ratio filter described in the paper nor
+``--smallest-transformation-only`` closes it, and both break the exact
+BACE match, so the remaining difference is most likely an mmpdb version
+change. Close enough to retrain on; if you need the published pair sets
+exactly, download them rather than rebuilding.
 
 Usage::
 

@@ -69,7 +69,7 @@ class ParquetStreamWriter:
 
     def close(self):
         self.writer.close()
-        print(f"✅ Finalized {self.row_count} rows written to {self.path}")
+        print(f"Finalized {self.row_count} rows written to {self.path}")
 
 
 def compute_all_pairs_blockwise_to_parquet(

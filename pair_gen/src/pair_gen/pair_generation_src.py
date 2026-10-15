@@ -275,7 +275,7 @@ class CustomArrowStreamWriter:
         """
         try:
             self.writer.close()
-            logger.info(f"✅ Finalized {self.row_count} rows written to {self.path}")
+            logger.info(f"Finalized {self.row_count} rows written to {self.path}")
         except Exception as e:
             logger.error(f"Error closing stream writer: {e}")
             # Try to clean up the corrupted file
@@ -786,7 +786,7 @@ class PairGenerator:
         self.splits = splits_list
         self.dataset_splits = [split_mapping[split] for split in splits_list]
         
-        logger.info(f"✅ Using splits: {self.splits} (maps to dataset splits: {self.dataset_splits})")
+        logger.info(f"Using splits: {self.splits} (maps to dataset splits: {self.dataset_splits})")
         
     def _format_time_estimate(self, seconds: float) -> str:
         """
@@ -852,12 +852,12 @@ class PairGenerator:
         if percentile_specified:
             if self.percentile_threshold <= 0 or self.percentile_threshold > 100:
                 raise ValueError(f"percentile_threshold must be between 0 and 100, got {self.percentile_threshold}")
-            logger.info(f"✅ Using percentile_threshold: {self.percentile_threshold}%")
+            logger.info(f"Using percentile_threshold: {self.percentile_threshold}%")
         
         if max_pairs_specified:
             if self.max_pairs_per_mol <= 0:
                 raise ValueError(f"max_pairs_per_mol must be positive, got {self.max_pairs_per_mol}")
-            logger.info(f"✅ Using max_pairs_per_mol: {self.max_pairs_per_mol}")
+            logger.info(f"Using max_pairs_per_mol: {self.max_pairs_per_mol}")
 
     def compute_distances_and_pairs(self):
         """
@@ -1118,10 +1118,10 @@ class PairGenerator:
             # Close the stream writer
             stream_writer.close()
             
-            logger.info(f"✅ Pair generation completed! Total pairs: {total_pairs_processed:,}")
+            logger.info(f"Pair generation completed! Total pairs: {total_pairs_processed:,}")
             
         except Exception as e:
-            logger.error(f"❌ Error during pair generation: {e}")
+            logger.error(f"Error during pair generation: {e}")
             if stream_writer:
                 stream_writer.close()
             raise e
@@ -1326,9 +1326,9 @@ class PairGenerator:
                         # Convert to Polars DataFrame
                         pairs_df = pl.from_arrow(table)
                         pairs_df.write_parquet(parquet_file)
-                        logger.info(f"✅ Converted Arrow IPC to Parquet: {parquet_file}")
+                        logger.info(f"Converted Arrow IPC to Parquet: {parquet_file}")
                     except Exception as e:
-                        logger.error(f"❌ Error converting Arrow IPC to Parquet: {e}")
+                        logger.error(f"Error converting Arrow IPC to Parquet: {e}")
                         raise e
                 else:
                     logger.warning("No data found in Arrow IPC file")
@@ -1339,7 +1339,7 @@ class PairGenerator:
             try:
                 pairs_df = pl.read_ipc(self.pairs_file)
                 pairs_df.write_parquet(parquet_file)
-                logger.info(f"✅ Converted Arrow IPC to Parquet (alternative method): {parquet_file}")
+                logger.info(f"Converted Arrow IPC to Parquet (alternative method): {parquet_file}")
             except Exception as e2:
                 logger.error(f"Alternative conversion method also failed: {e2}")
     

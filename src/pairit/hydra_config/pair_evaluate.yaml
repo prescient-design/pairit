@@ -14,7 +14,7 @@ split: val
 
 # datamodule:
 #   _target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
-#   tokenizer_max_length: 1024 #8192 # shouldn't this come from elsewhere??
+#   tokenizer_max_length: 1024 #8192 
 
 # Training info for computing datapoints seen (extracted from checkpoint + config)
 training_batch_size: null  # Set to override datamodule.batch_size for datapoints calculation

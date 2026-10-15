@@ -59,7 +59,6 @@ callbacks:
       - name: hiv_train
         path: ${pairit_assets:data/moleculenet/hiv/train/molecules.parquet}
         default: true
-        # FOR SPEED; TO PUT BACK IN!
       - name: zinc_train
         path: ${pairit_assets:data/zinc/train/molecules.parquet}
     expensive_metrics_to_compute: ["memorization"] #["snn"] #$["snn"] #["snn", "fcd", "internal_diversity", "fragment_scaffold", "w1_kde"]

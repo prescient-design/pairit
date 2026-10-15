@@ -34,7 +34,7 @@ class PairITCLM(pl.LightningModule):
         scheduler_kwargs: dict = None,
     ):
         """
-        Prescient Protein Causal Language Model.
+        Causal language model over SMILES strings.
 
         Parameters
         ----------

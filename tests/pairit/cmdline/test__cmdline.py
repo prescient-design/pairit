@@ -4,11 +4,10 @@ import subprocess
 import pytest
 
 
-# Only pairit_train is exercised in the fast CI: each subprocess reimports the
-# full pairit + torch + rdkit + hydra stack (~500 MB peak), and running all
-# three back-to-back consistently OOMs the current kubernetes runner. Since
-# all three CLIs share identical import machinery, one is sufficient to
-# verify the entry-point wiring works. See MR!11593 for the OOM history.
+# Only pairit_train is exercised here: each subprocess reimports the full
+# pairit + torch + rdkit + hydra stack (~500 MB peak), and running all three
+# back-to-back exhausts memory on smaller CI runners. All three CLIs share the
+# same import machinery, so one is enough to verify the entry-point wiring.
 @pytest.mark.parametrize("script", ["pairit_train"])
 def test_hydra_entrypoint_help(script):
     if shutil.which(script) is None:

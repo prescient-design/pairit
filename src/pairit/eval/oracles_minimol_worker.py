@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # Where the per-dataset MiniMol heads live. Overridable so this is not welded to
-# one filesystem. Defaults to atom/pairit/assets/oracles/{moleculenet,tdc}/minimol/
-# resolved relative to this file (parents[3] = atom/pairit/), so the worker keeps
+# one filesystem. Defaults to assets/oracles/{moleculenet,tdc}/minimol/
+# resolved relative to this file (parents[3] = the repository root), so the worker keeps
 # working when pairit is not installed in the MiniMol venv.
 _ASSETS_ROOT = Path(__file__).resolve().parents[3] / "assets" / "oracles"
 _DEFAULT_HEAD_DIRS = [

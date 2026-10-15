@@ -363,9 +363,9 @@ Examples:
             overwrite_existing=args.overwrite_existing,
             backup=not args.no_backup,
         )
-        print("\n✅ Success!")
+        print("\nSuccess.")
     except Exception as e:
-        print(f"\n❌ Error: {e}", file=sys.stderr)
+        print(f"\nError: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         sys.exit(1)

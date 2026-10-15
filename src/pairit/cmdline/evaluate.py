@@ -396,9 +396,9 @@ def evaluate(cfg: DictConfig) -> None:
             else:
                 raise
     else:
-        logger.info("⚠️  No checkpoint path found, instantiating fresh model")
+        logger.info("No checkpoint path found, instantiating fresh model")
         model = hydra.utils.instantiate(cfg.model)
-        logger.info("⚠️  Using randomly initialized model weights")
+        logger.info("Using randomly initialized model weights")
 
     model.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     _phase_times["Model loading"] = _time.time() - _t0

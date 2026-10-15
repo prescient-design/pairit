@@ -63,7 +63,7 @@ class PairITCLM2(pl.LightningModule):
         weight_decay: float = 0.01,
     ):
         """
-        Prescient Protein Causal Language Model.
+        Causal language model over SMILES strings.
 
         Parameters
         ----------

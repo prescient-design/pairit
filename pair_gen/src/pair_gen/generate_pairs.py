@@ -26,10 +26,10 @@ def create_split_specific_parquet_files(config):
             split_df = pairs_df.filter(pl.col("split") == split)
             output_file = Path(config.output_dir) / f"pairs_{split}.parquet"
             split_df.write_parquet(output_file)
-            logger.info(f"✅ Created {split} pairs file with {len(split_df)} rows: {output_file}")
+            logger.info(f"Created {split} pairs file with {len(split_df)} rows: {output_file}")
             
     except Exception as e:
-        logger.error(f"❌ Error creating split-specific files: {e}")
+        logger.error(f"Error creating split-specific files: {e}")
         raise e
     
 
@@ -52,9 +52,9 @@ def main(config: DictConfig):
     
     # The config file is automatically saved in the output directory by PairGenerator
     config_file_path = Path(config.output_dir) / "config.yaml"
-    logger.info(f"✅ Configuration saved to: {config_file_path}")
+    logger.info(f"Configuration saved to: {config_file_path}")
     
-    logger.info(f"\n✅ Parquet files generated successfully!")
+    logger.info(f"\nParquet files generated successfully!")
     logger.info(f"📁 Output directory: {config.output_dir}")
     logger.info(f"🧪 Dataset: {config.dataset_name}")
     

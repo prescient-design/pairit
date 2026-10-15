@@ -35,10 +35,9 @@ DATASET_CONFIG = {
         # reference than if ZINC were unioned.
         "train_smiles": [
             str(ASSETS / "data" / "moleculenet" / "bace" / "train" / "molecules.parquet"),
-            # ZINC-250K unioned as memorisation reference: pretrained models (PairIT,
-            # HierG2G-from-logp) can copy ZINC molecules verbatim. Without this
-            # union, HierG2G on hERG showed ~99% novel (real Novel is ~22% -- Hannah's
-            # rebuttal). Same union rule applies across MoleculeNet + hERG for consistency.
+            # ZINC-250K is unioned in as a memorisation reference: pretrained
+            # models can reproduce ZINC molecules verbatim, which would otherwise
+            # count as novel. The same union applies to every dataset.
             str(ASSETS / "data" / "zinc" / "train" / "molecules.parquet"),
         ],"smiles_col": "smiles", "label_col": "Class", "task_name": "bace_b", "evaluator_type": "binary", "direction": "increasing", "family": "moleculenet", "n_test_seeds": 135},
     "bbbp": {
@@ -112,12 +111,8 @@ DATASET_CONFIG = {
         ],
     },
     "herg": {
-        # Novelty reference = hERG train UNIONED WITH ZINC-250K train.
-        # ZINC union added 2026-09-02 (Ewa Nowara) so pretrained baselines like
-        # HierG2G-from-logp cannot silently pass memorised ZINC molecules as
-        # "novel". Under hERG-train-only, HierG2G shows ~99% novel; under the
-        # union (matching Hannah's `add_herg_baselines.py`'s
-        # `--extra-train-smiles ... zinc_train:...`), it drops to ~22%.
+        # Novelty reference = hERG train unioned with ZINC-250K train, so that
+        # pretrained models cannot pass memorised ZINC molecules off as novel.
         "train_smiles": [
             str(ASSETS / "data" / "tdc" / "herg" / "train" / "molecules.parquet"),
             str(ASSETS / "data" / "zinc" / "train" / "molecules.parquet"),

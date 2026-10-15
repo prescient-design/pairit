@@ -47,7 +47,7 @@ The two historical Lobster pickle paths for `TokenizerTransform` and
 `SmilesTokenizer2Fast` resolve to their PairIT equivalents through
 `pairit.cmdline._checkpoint_compat`; other Lobster objects are unsupported.
 
-Run the focused regressions from `atom/pairit`:
+Run the focused regressions from the repository root:
 
 ```bash
 PYTHONPATH=src pytest -q tests/test_signed_property_prompting.py \

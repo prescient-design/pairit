@@ -17,7 +17,7 @@ split: test
 
 # datamodule:
 #   _target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
-#   tokenizer_max_length: 1024 #8192 # shouldn't this come from elsewhere??
+#   tokenizer_max_length: 1024 #8192 
 
 # Training info for computing datapoints seen (extracted from checkpoint + config)
 training_batch_size: null  # Set to override datamodule.batch_size for datapoints calculation
@@ -60,7 +60,6 @@ callbacks:
       - name: bace_train
         path: ${pairit_assets:data/moleculenet/bace/train/molecules_bace.parquet}
         default: true
-        # FOR SPEED; TO PUT BACK IN!
       - name: zinc_train
         path: ${pairit_assets:data/zinc/train/molecules.parquet}
     expensive_metrics_to_compute: ["memorization"] #["snn"] #$["snn"] #["snn", "fcd", "internal_diversity", "fragment_scaffold", "w1_kde"]

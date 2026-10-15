@@ -257,11 +257,9 @@ class FingerprintJoblibOracle(Oracle):
             mol = Chem.MolFromSmiles(str(smi))
             if mol is None:
                 continue
-            # DataStructs.ConvertToNumpyArray, never np.asarray(fingerprint). Passing an
-            # RDKit ExplicitBitVect through np.asarray corrupts memory under numpy 2.x --
-            # it does not raise, it segfaults the interpreter later, with no traceback.
-            # That crash was misdiagnosed as the oracle joblib being unloadable, and cost
-            # a day. The rest of this package uses the supported converter; so must this.
+            # Use DataStructs.ConvertToNumpyArray, never np.asarray(fingerprint):
+            # passing an RDKit ExplicitBitVect through np.asarray corrupts memory
+            # under numpy 2.x, segfaulting later with no traceback rather than raising.
             arr = np.zeros((self.nbits,), dtype=np.uint8)
             DataStructs.ConvertToNumpyArray(gen.GetFingerprint(mol), arr)
             fps.append(arr)
