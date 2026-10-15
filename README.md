@@ -244,6 +244,9 @@ pairit_train \
   experiment=bace_property_prompting_all_and_dist
 
 # Signed magnitude prompts
+export PAIRIT_PROMPT_DATA_ROOT="$PWD/assets/data"
+export PAIRIT_PROMPT_OUTPUT_ROOT="$PWD/runs/prompting"
+
 pairit_train \
   --config-name=train_molecule_improvement \
   data=bace_real_molecule_improvement \
@@ -251,6 +254,9 @@ pairit_train \
   logger=csv \
   experiment=property_prompting_signed
 ```
+
+The signed recipe deliberately has no fallback for those two variables: it
+fails rather than guess where prepared prompt data lives or where to write.
 
 Recipes live in `src/pairit/hydra_config/prompting/`; see its
 [README](src/pairit/hydra_config/prompting/README.md) for the prompt

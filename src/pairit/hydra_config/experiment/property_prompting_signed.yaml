@@ -6,7 +6,7 @@ defaults:
 seed: 0
 data:
   # Supply prepared, split-isolated pairs explicitly. Do not reorder/filter them.
-  root: ${oc.env:PAIRIT_PROMPT_DATA_ROOT,${pairit_assets:data}}
+  root: ${oc.env:PAIRIT_PROMPT_DATA_ROOT}
   utility_key: null
   epsilon: 0
   delta: null
@@ -27,7 +27,7 @@ model:
   max_length: 300
 
 paths:
-  root_dir: ${oc.env:PAIRIT_PROMPT_OUTPUT_ROOT,${oc.env:PAIRIT_RUNS,./runs}/prompting}
+  root_dir: ${oc.env:PAIRIT_PROMPT_OUTPUT_ROOT}
 
 hydra:
   run:

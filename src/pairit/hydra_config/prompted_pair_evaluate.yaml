@@ -13,7 +13,7 @@ hydra:
     dir: ${output_dir}/hydra
 
 datamodule:
-  root: ${oc.env:PAIRIT_PROMPT_DATA_ROOT,${pairit_assets:data}}
+  root: ${oc.env:PAIRIT_PROMPT_DATA_ROOT}
   utility_key: null
   epsilon: 0
   delta: null
