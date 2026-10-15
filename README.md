@@ -286,4 +286,6 @@ If you use this code, please cite:
 
 ## License
 
-Apache License 2.0 (see [LICENSE](LICENSE)).
+Genentech Non-Commercial Software License Version 1.0 (see [LICENSE](LICENSE)).
+The license reuses most of the text of the Apache License, Version 2.0, with an
+added restriction against commercial use.

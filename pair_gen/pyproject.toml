@@ -9,12 +9,12 @@ version = "0.0.1"
 #dynamic = ["version"]
 description = "Utilities for molecular pair generation and distance calculations"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Genentech Non-Commercial Software License Version 1.0" }
 authors = [{ name = "PairIT Team" }]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
+  "License :: Other/Proprietary License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.8",

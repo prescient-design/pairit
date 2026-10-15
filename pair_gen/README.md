@@ -103,4 +103,5 @@ pytest
 
 ## License
 
-MIT License
+Genentech Non-Commercial Software License Version 1.0 — see the
+[LICENSE](../LICENSE) file at the repository root.
