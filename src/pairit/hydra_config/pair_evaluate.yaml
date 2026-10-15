@@ -30,7 +30,7 @@ model:
   run_name: from_scratch_600
   extra_name: last_ckpt
   # No default — every derived config (bace_real_pair_evaluate, zinc_pair_evaluate,
-  # tdc_herg_knn_evaluate, ...) overrides this with the bundled checkpoint under
+  # ...) overrides this with the bundled checkpoint under
   # ${pairit_assets:checkpoints/pairit/...}. Override on the CLI to point at a custom
   # checkpoint; wrap the path in inner single quotes because Lightning ckpt filenames
   # contain '=' which Hydra otherwise treats as further overrides.

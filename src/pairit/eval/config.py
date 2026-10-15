@@ -177,7 +177,10 @@ DATASET_CONFIG = {
 MOLECULENET_DATASETS = ["bace", "bbbp", "hiv"]
 TDC_DATASETS = ["caco2_wang", "freesolv", "herg"]
 CYP_DATASETS = ["cyp2c9_substrate", "cyp2d6_substrate", "cyp3a4_substrate"]
-DEFAULT_DATASETS = MOLECULENET_DATASETS + ["zinc250k"] + TDC_DATASETS
+# The TDC datasets (hERG among them) stay supported but are not evaluated by
+# default: they are an appendix result, and their assets are not part of the
+# standard bundle. Pass them explicitly to opt in.
+DEFAULT_DATASETS = MOLECULENET_DATASETS + ["zinc250k"]
 
 
 _PAIRIT_FROM_ZINC = {
