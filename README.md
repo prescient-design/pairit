@@ -226,6 +226,9 @@ python -m pairit.rl.grpo_train \
 `--help` lists the reward and KL options (`--reward-mode`, `--beta`,
 `--gated-similarity-threshold`, the `--w-*` reward weights).
 
+GRPO reports to Weights & Biases. Without an account, set
+`WANDB_MODE=offline` (or `disabled`) before running.
+
 There is no separate RL inference path: generate from an RL checkpoint
 with `pairit_best_of_n` by pointing `model.ckpt_path` at it.
 
