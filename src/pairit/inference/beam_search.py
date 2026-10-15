@@ -382,16 +382,22 @@ def _apply_eval_config_overlay(cfg: DictConfig) -> None:
     if not eval_config_name:
         return
 
-    from hydra import compose, initialize_config_dir
     import os
 
-    config_dir = os.path.join(
-        os.path.dirname(__file__), "..", "hydra_config"
-    )
-    config_dir = os.path.abspath(config_dir)
+    from hydra import compose, initialize_config_dir
+    from hydra.core.global_hydra import GlobalHydra
 
-    with initialize_config_dir(config_dir=config_dir, version_base=None):
+    # This runs inside a @hydra.main app, so Hydra is normally already
+    # initialised and its search path already contains hydra_config/ --
+    # compose directly rather than initialising a second time, which raises.
+    if GlobalHydra.instance().is_initialized():
         eval_cfg = compose(config_name=eval_config_name)
+    else:
+        config_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "hydra_config")
+        )
+        with initialize_config_dir(config_dir=config_dir, version_base=None):
+            eval_cfg = compose(config_name=eval_config_name)
 
     extracted = extract_from_eval_config(eval_cfg)
     logger.info(f"[Eval Config Overlay] Extracted from '{eval_config_name}': {list(extracted.keys())}")
