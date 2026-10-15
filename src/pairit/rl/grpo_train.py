@@ -746,9 +746,12 @@ def main():
         seed=args.seed,
     )
 
-    # Set WandB project/entity via environment (TRL reads these)
-    os.environ["WANDB_PROJECT"] = args.wandb_project
-    os.environ["WANDB_ENTITY"] = args.wandb_entity
+    # Set WandB project/entity via environment (TRL reads these). Both are
+    # optional: os.environ rejects None, so only set what was given.
+    if args.wandb_project:
+        os.environ["WANDB_PROJECT"] = args.wandb_project
+    if args.wandb_entity:
+        os.environ["WANDB_ENTITY"] = args.wandb_entity
 
     trainer = SmilesGRPOTrainer(
         model=model,
