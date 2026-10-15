@@ -3,8 +3,12 @@
 Reads what ``scripts/download_data.py`` fetched and writes one parquet per
 split, in the layout the training and evaluation configs expect::
 
-    <out>/moleculenet/<dataset>/<split>/molecules_<dataset>_real.parquet
+    <out>/moleculenet/<dataset>/<split>/molecules.parquet
     <out>/zinc/<split>/molecules.parquet
+
+This mirrors the bundled ``assets/data/`` layout, so pointing
+``PAIRIT_ASSETS_DIR`` at the output directory is enough for the training
+and evaluation configs to resolve it.
 
 SMILES are canonicalised with RDKit and eight descriptors are computed
 (logP, SAS, TPSA, MW, HBD, HBA, QED, fracCSP3). MoleculeNet splits come
@@ -40,7 +44,9 @@ except ImportError:  # sascorer ships inside RDKit's Contrib tree
     sys.path.append(os.path.join(RDConfig.RDContribDir, "SA_Score"))
     import sascorer
 
-MOLECULENET = ("bace", "bbbp", "hiv")
+# Each MoleculeNet task keeps its own label column name, as the molecule
+# tables and the data configs' `utility_key` both refer to it directly.
+MOLECULENET = {"bace": "Class", "bbbp": "p_np", "hiv": "HIV_active"}
 DESCRIPTORS = ("logP", "SAS", "TPSA", "MW", "HBD", "HBA", "QED", "fracCSP3")
 
 
@@ -64,17 +70,22 @@ def describe(smiles: str) -> dict | None:
     }
 
 
-def build_table(rows: list[dict], split: str) -> pd.DataFrame:
+def build_table(rows: list[dict], split: str, label_column: str) -> pd.DataFrame:
     frame = pd.DataFrame(rows)
+    # Two source rows can canonicalise to the same molecule; the pair tables
+    # index into the deduplicated table, so dedup before numbering.
+    frame = frame.drop_duplicates("smiles").reset_index(drop=True)
     frame["split"] = split
     frame["molecule_type"] = "real"
     frame["molecule_idx"] = range(len(frame))
-    columns = ["smiles", "original_id", "Class", "split", "molecule_type", "molecule_idx"]
+    columns = ["smiles", "original_id", label_column, "split", "molecule_type", "molecule_idx"]
     return frame[columns + list(DESCRIPTORS)]
 
 
 def prepare_moleculenet(dataset: str, raw: Path, out: Path) -> None:
     import torch  # imported lazily: only the MoleculeNet path needs it
+
+    label_column = MOLECULENET[dataset]
 
     source = pd.read_csv(raw / "moleculenet" / f"{dataset}_b.csv.gz")
     split_index = torch.load(raw / "moleculenet" / f"{dataset}_b_split.pt", weights_only=False)
@@ -91,11 +102,11 @@ def prepare_moleculenet(dataset: str, raw: Path, out: Path) -> None:
                 skipped += 1
                 continue
             described["original_id"] = record["mol_id"]
-            described["Class"] = float(record["Class"])
+            described[label_column] = float(record[label_column])
             rows.append(described)
 
-        table = build_table(rows, split)
-        target = out / "moleculenet" / dataset / split / f"molecules_{dataset}_real.parquet"
+        table = build_table(rows, split, label_column)
+        target = out / "moleculenet" / dataset / split / "molecules.parquet"
         target.parent.mkdir(parents=True, exist_ok=True)
         table.to_parquet(target, index=False)
         note = f" ({skipped} unparseable skipped)" if skipped else ""
@@ -122,7 +133,7 @@ def prepare_zinc(raw: Path, out: Path) -> None:
             described["Class"] = float("nan")
             rows.append(described)
 
-        table = build_table(rows, split)
+        table = build_table(rows, split, "Class")
         target = out / "zinc" / split / "molecules.parquet"
         target.parent.mkdir(parents=True, exist_ok=True)
         table.to_parquet(target, index=False)
