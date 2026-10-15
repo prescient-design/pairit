@@ -723,11 +723,6 @@ class MoleculeValidationCallback(Callback):
         # FCD settings
         self._fcd_min_required = int(fcd_min_required)
         
-        # Relevance check removed from public release (see MR history). Attribute
-        # kept as False so any legacy `if self.check_relevance:` branches inside
-        # this file remain dead. The full deletion of those branches is a
-        # follow-up MR-F polish task.
-        self.check_relevance = False
         # Default dataset stats (used as fallback if no reference files provided or stats computation fails)
         self.dataset_stats = dataset_stats if dataset_stats is not None else {'max_ring_size': 8, 'max_alkyl_chain': 5}
 
@@ -2133,20 +2128,6 @@ class MoleculeValidationCallback(Callback):
             self._epoch_cond_improved_any, _metric_denom,
             "Fraction valid+improved (any property)", "Conditional - Basic",
         )
-        if self.check_relevance and self._epoch_cond_relevant_by_ref:
-            for ref_name in sorted(self._epoch_cond_relevant_by_ref.keys()):
-                registry.register_fraction(
-                    f"molecule_relevance_conditional/{ref_name}",
-                    self._epoch_cond_relevant_by_ref[ref_name], self._epoch_cond_valid_gens,
-                    f"Relevance vs {ref_name}", "Conditional - Relevance",
-                )
-                details = self._epoch_cond_relevancy_details_by_ref.get(ref_name, {})
-                for key in ('fragmented', 'large_ring', 'long_chain'):
-                    registry.register_fraction(
-                        f"relevance_{key}_conditional/{ref_name}",
-                        details.get(key, 0), self._epoch_cond_valid_gens,
-                        f"Relevance {key} vs {ref_name}", "Conditional - Relevance",
-                    )
         if "memorization" in self.expensive_metrics_to_compute:
             for spec in self.property_specs:
                 registry.register_fraction(
@@ -2404,10 +2385,6 @@ class MoleculeValidationCallback(Callback):
             relevant_by_ref: Dict[str, int] = {}
             relevancy_details_by_ref: Dict[str, Dict[str, int]] = {}
             # Initialize per-reference tracking if relevancy is enabled
-            if self.check_relevance and self._reference_dataset_stats_by_name:
-                for ref_name in sorted(self._reference_dataset_stats_by_name.keys()):
-                    relevant_by_ref[ref_name] = 0
-                    relevancy_details_by_ref[ref_name] = {'fragmented': 0, 'large_ring': 0, 'long_chain': 0}
             
             neighbors_batch = batch.get("neighbors_smiles", None)
             for i, generated_sequence in enumerate(all_generated_sequences):
@@ -2450,67 +2427,6 @@ class MoleculeValidationCallback(Callback):
                     valid_generations += 1
                 
                 # Relevancy check (only for valid molecules) - per reference
-                if self.check_relevance and is_valid and canonical_gen:
-                    # Extract seed and generated SMILES from tokens
-                    seed_smiles = None
-                    gen_smiles = canonical_gen
-                    try:
-                        # Extract seed from input_ids
-                        seed_tokens = input_ids.reshape(-1).tolist()
-                        seed_smiles_list = SmilesUtils.tokens_to_smiles(pl_module.tokenizer, seed_tokens)
-                        # Use first SMILES as seed (could be full_input_smiles1 or conditioned_smiles)
-                        if seed_smiles_list and seed_smiles_list[0]:
-                            seed_smiles = seed_smiles_list[0]
-                            # Clean prompt tokens
-                            prompt_token_pattern = r'<(?:p(?:c|dir_[^>]*|[0d]?_[^>]*|_[^>]*)|dc|d_\d+)>'
-                            seed_smiles = re.sub(prompt_token_pattern, '', seed_smiles).strip()
-                    except Exception:
-                        pass
-                    
-                    if seed_smiles:
-                        seed_stats = get_seed_mol_stats(seed_smiles)
-                        
-                        # Check relevancy against each reference dataset
-                        if self._reference_dataset_stats_by_name:
-                            for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                is_relevant, rel_details = check_relevance(
-                                    gen_smiles,
-                                    seed_smiles,
-                                    seed_stats,
-                                    ref_stats,
-                                    mode=self.relevance_mode
-                                )
-                                if is_relevant:
-                                    relevant_by_ref[ref_name] += 1
-                                # Track relevancy failure reasons per reference
-                                if rel_details.get('fragmented', False):
-                                    relevancy_details_by_ref[ref_name]['fragmented'] += 1
-                                if rel_details.get('large_ring', False):
-                                    relevancy_details_by_ref[ref_name]['large_ring'] += 1
-                                if rel_details.get('long_chain', False):
-                                    relevancy_details_by_ref[ref_name]['long_chain'] += 1
-                        else:
-                            # Fallback to default stats if no reference stats computed
-                            is_relevant, rel_details = check_relevance(
-                                gen_smiles,
-                                seed_smiles,
-                                seed_stats,
-                                self.dataset_stats,
-                                mode=self.relevance_mode
-                            )
-                            # Use default reference name for logging
-                            default_ref = self._default_reference_name or "default"
-                            if default_ref not in relevant_by_ref:
-                                relevant_by_ref[default_ref] = 0
-                                relevancy_details_by_ref[default_ref] = {'fragmented': 0, 'large_ring': 0, 'long_chain': 0}
-                            if is_relevant:
-                                relevant_by_ref[default_ref] += 1
-                            if rel_details.get('fragmented', False):
-                                relevancy_details_by_ref[default_ref]['fragmented'] += 1
-                            if rel_details.get('large_ring', False):
-                                relevancy_details_by_ref[default_ref]['large_ring'] += 1
-                            if rel_details.get('long_chain', False):
-                                relevancy_details_by_ref[default_ref]['long_chain'] += 1
                 any_flag = False
                 for spec in self.property_specs:
                     if flags.get(spec.name, False):
@@ -2577,13 +2493,6 @@ class MoleculeValidationCallback(Callback):
         self._epoch_cond_improved_any += improved_any_count
 
         # Relevancy accumulators
-        if self.check_relevance and relevant_by_ref:
-            for ref_name in sorted(relevant_by_ref.keys()):
-                self._epoch_cond_relevant_by_ref[ref_name] = self._epoch_cond_relevant_by_ref.get(ref_name, 0) + relevant_by_ref[ref_name]
-                if ref_name not in self._epoch_cond_relevancy_details_by_ref:
-                    self._epoch_cond_relevancy_details_by_ref[ref_name] = {'fragmented': 0, 'large_ring': 0, 'long_chain': 0}
-                for key in ('fragmented', 'large_ring', 'long_chain'):
-                    self._epoch_cond_relevancy_details_by_ref[ref_name][key] += relevancy_details_by_ref[ref_name].get(key, 0)
 
         # Valid+not_memorized+improved accumulators
         if "memorization" in self.expensive_metrics_to_compute:
@@ -2608,17 +2517,6 @@ class MoleculeValidationCallback(Callback):
         # Print concise batch summary (no logging — metrics logged at epoch end)
         if self._should_print():
             self.printer.print_info(f"[Conditional] validity={frac_valid:.3f} ({valid_generations}/{total_generations})")
-            if self.check_relevance and relevant_by_ref:
-                for ref_name in sorted(relevant_by_ref.keys()):
-                    ref_relevant = relevant_by_ref[ref_name]
-                    ref_details = relevancy_details_by_ref[ref_name]
-                    frac_relevant = float(ref_relevant) / valid_generations if valid_generations > 0 else 0.0
-                    self.printer.print_info(
-                        f"[Conditional] relevance/{ref_name}={frac_relevant:.3f} ({ref_relevant}/{valid_generations} valid), "
-                        f"fragmented={ref_details['fragmented']}, "
-                        f"large_ring={ref_details['large_ring']}, "
-                        f"long_chain={ref_details['long_chain']}"
-                    )
             any_frac = float(improved_any_count) / total_generations if total_generations > 0 else 0.0
             self.printer.print_info(
                 "[Conditional] improved=" + ", ".join(
@@ -3088,11 +2986,6 @@ class MoleculeValidationCallback(Callback):
                     relevant_second_by_ref: Dict[str, int] = {}
                     relevancy_details_by_ref_uncond: Dict[str, Dict[str, int]] = {}
                     # Initialize per-reference tracking if relevancy is enabled
-                    if self.check_relevance and self._reference_dataset_stats_by_name:
-                        for ref_name in sorted(self._reference_dataset_stats_by_name.keys()):
-                            relevant_first_by_ref[ref_name] = 0
-                            relevant_second_by_ref[ref_name] = 0
-                            relevancy_details_by_ref_uncond[ref_name] = {'large_ring': 0, 'long_chain': 0}
 
                     # Process sequences for this dataset key
                     for i, sampled_tokens in enumerate(all_sampled_tokens):
@@ -3111,86 +3004,6 @@ class MoleculeValidationCallback(Callback):
                         first_smiles_string, second_smiles_string = SmilesUtils.tokens_to_smiles(pl_module.tokenizer, sampled_tokens)
                         
                         # Relevancy check for per-dataset unconditional generation (per reference)
-                        if self.check_relevance:
-                            # Check first molecule against all references
-                            if first_valid and first_smiles_string:
-                                first_canon = SmilesUtils.canonicalize(first_smiles_string)
-                                if first_canon:
-                                    if self._reference_dataset_stats_by_name:
-                                        for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                            is_relevant, rel_details = check_relevance(
-                                                first_canon,
-                                                None,  # No seed
-                                                None,  # No seed stats
-                                                ref_stats,
-                                                mode=self.relevance_mode
-                                            )
-                                            if is_relevant:
-                                                relevant_first_by_ref[ref_name] += 1
-                                            if rel_details.get('large_ring', False):
-                                                relevancy_details_by_ref_uncond[ref_name]['large_ring'] += 1
-                                            if rel_details.get('long_chain', False):
-                                                relevancy_details_by_ref_uncond[ref_name]['long_chain'] += 1
-                                    else:
-                                        # Fallback to default stats
-                                        default_ref = self._default_reference_name or "default"
-                                        if default_ref not in relevant_first_by_ref:
-                                            relevant_first_by_ref[default_ref] = 0
-                                            relevant_second_by_ref[default_ref] = 0
-                                            relevancy_details_by_ref_uncond[default_ref] = {'large_ring': 0, 'long_chain': 0}
-                                        is_relevant, rel_details = check_relevance(
-                                            first_canon,
-                                            None,
-                                            None,
-                                            self.dataset_stats,
-                                            mode=self.relevance_mode
-                                        )
-                                        if is_relevant:
-                                            relevant_first_by_ref[default_ref] += 1
-                                        if rel_details.get('large_ring', False):
-                                            relevancy_details_by_ref_uncond[default_ref]['large_ring'] += 1
-                                        if rel_details.get('long_chain', False):
-                                            relevancy_details_by_ref_uncond[default_ref]['long_chain'] += 1
-                            
-                            # Check second molecule against all references
-                            if second_valid and second_smiles_string:
-                                second_canon = SmilesUtils.canonicalize(second_smiles_string)
-                                if second_canon:
-                                    if self._reference_dataset_stats_by_name:
-                                        for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                            is_relevant, rel_details = check_relevance(
-                                                second_canon,
-                                                None,  # No seed
-                                                None,  # No seed stats
-                                                ref_stats,
-                                                mode=self.relevance_mode
-                                            )
-                                            if is_relevant:
-                                                relevant_second_by_ref[ref_name] += 1
-                                            if rel_details.get('large_ring', False):
-                                                relevancy_details_by_ref_uncond[ref_name]['large_ring'] += 1
-                                            if rel_details.get('long_chain', False):
-                                                relevancy_details_by_ref_uncond[ref_name]['long_chain'] += 1
-                                    else:
-                                        # Fallback to default stats
-                                        default_ref = self._default_reference_name or "default"
-                                        if default_ref not in relevant_second_by_ref:
-                                            relevant_first_by_ref[default_ref] = 0
-                                            relevant_second_by_ref[default_ref] = 0
-                                            relevancy_details_by_ref_uncond[default_ref] = {'large_ring': 0, 'long_chain': 0}
-                                        is_relevant, rel_details = check_relevance(
-                                            second_canon,
-                                            None,
-                                            None,
-                                            self.dataset_stats,
-                                            mode=self.relevance_mode
-                                        )
-                                        if is_relevant:
-                                            relevant_second_by_ref[default_ref] += 1
-                                        if rel_details.get('large_ring', False):
-                                            relevancy_details_by_ref_uncond[default_ref]['large_ring'] += 1
-                                        if rel_details.get('long_chain', False):
-                                            relevancy_details_by_ref_uncond[default_ref]['long_chain'] += 1
                         
                         if second_smiles_string is not None and self._safe_valid(second_smiles_string):
                             um.accumulate_valid_smiles(second_smiles_string)
@@ -3230,11 +3043,6 @@ class MoleculeValidationCallback(Callback):
                 relevant_second_by_ref_uncond: Dict[str, int] = {}
                 relevancy_details_uncond_by_ref: Dict[str, Dict[str, int]] = {}
                 # Initialize per-reference tracking if relevancy is enabled
-                if self.check_relevance and self._reference_dataset_stats_by_name:
-                    for ref_name in sorted(self._reference_dataset_stats_by_name.keys()):
-                        relevant_first_by_ref_uncond[ref_name] = 0
-                        relevant_second_by_ref_uncond[ref_name] = 0
-                        relevancy_details_uncond_by_ref[ref_name] = {'large_ring': 0, 'long_chain': 0}
                 
                 for i, sampled_tokens in enumerate(all_sampled_tokens):
                     first_valid, second_valid = self._process_unconditional_generation_sample_post_generation(
@@ -3250,86 +3058,6 @@ class MoleculeValidationCallback(Callback):
                     first_smiles_string, second_smiles_string = SmilesUtils.tokens_to_smiles(pl_module.tokenizer, sampled_tokens)
                     
                     # Relevancy check for unconditional generation (no seed, so only check rings/chains) - per reference
-                    if self.check_relevance:
-                        # Check first molecule against all references
-                        if first_valid and first_smiles_string:
-                            first_canon = SmilesUtils.canonicalize(first_smiles_string)
-                            if first_canon:
-                                if self._reference_dataset_stats_by_name:
-                                    for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                        is_relevant, rel_details = check_relevance(
-                                            first_canon,
-                                            None,  # No seed
-                                            None,  # No seed stats
-                                            ref_stats,
-                                            mode=self.relevance_mode
-                                        )
-                                        if is_relevant:
-                                            relevant_first_by_ref_uncond[ref_name] += 1
-                                        if rel_details.get('large_ring', False):
-                                            relevancy_details_uncond_by_ref[ref_name]['large_ring'] += 1
-                                        if rel_details.get('long_chain', False):
-                                            relevancy_details_uncond_by_ref[ref_name]['long_chain'] += 1
-                                else:
-                                    # Fallback to default stats
-                                    default_ref = self._default_reference_name or "default"
-                                    if default_ref not in relevant_first_by_ref_uncond:
-                                        relevant_first_by_ref_uncond[default_ref] = 0
-                                        relevant_second_by_ref_uncond[default_ref] = 0
-                                        relevancy_details_uncond_by_ref[default_ref] = {'large_ring': 0, 'long_chain': 0}
-                                    is_relevant, rel_details = check_relevance(
-                                        first_canon,
-                                        None,
-                                        None,
-                                        self.dataset_stats,
-                                        mode=self.relevance_mode
-                                    )
-                                    if is_relevant:
-                                        relevant_first_by_ref_uncond[default_ref] += 1
-                                    if rel_details.get('large_ring', False):
-                                        relevancy_details_uncond_by_ref[default_ref]['large_ring'] += 1
-                                    if rel_details.get('long_chain', False):
-                                        relevancy_details_uncond_by_ref[default_ref]['long_chain'] += 1
-                        
-                        # Check second molecule against all references
-                        if second_valid and second_smiles_string:
-                            second_canon = SmilesUtils.canonicalize(second_smiles_string)
-                            if second_canon:
-                                if self._reference_dataset_stats_by_name:
-                                    for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                        is_relevant, rel_details = check_relevance(
-                                            second_canon,
-                                            None,  # No seed
-                                            None,  # No seed stats
-                                            ref_stats,
-                                            mode=self.relevance_mode
-                                        )
-                                        if is_relevant:
-                                            relevant_second_by_ref_uncond[ref_name] += 1
-                                        if rel_details.get('large_ring', False):
-                                            relevancy_details_uncond_by_ref[ref_name]['large_ring'] += 1
-                                        if rel_details.get('long_chain', False):
-                                            relevancy_details_uncond_by_ref[ref_name]['long_chain'] += 1
-                                else:
-                                    # Fallback to default stats
-                                    default_ref = self._default_reference_name or "default"
-                                    if default_ref not in relevant_second_by_ref_uncond:
-                                        relevant_first_by_ref_uncond[default_ref] = 0
-                                        relevant_second_by_ref_uncond[default_ref] = 0
-                                        relevancy_details_uncond_by_ref[default_ref] = {'large_ring': 0, 'long_chain': 0}
-                                    is_relevant, rel_details = check_relevance(
-                                        second_canon,
-                                        None,
-                                        None,
-                                        self.dataset_stats,
-                                        mode=self.relevance_mode
-                                    )
-                                    if is_relevant:
-                                        relevant_second_by_ref_uncond[default_ref] += 1
-                                    if rel_details.get('large_ring', False):
-                                        relevancy_details_uncond_by_ref[default_ref]['large_ring'] += 1
-                                    if rel_details.get('long_chain', False):
-                                        relevancy_details_uncond_by_ref[default_ref]['long_chain'] += 1
                     
                     # Collect valid molecules for dataset-level metrics
                     if second_smiles_string is not None and self._safe_valid(second_smiles_string):
@@ -3373,48 +3101,6 @@ class MoleculeValidationCallback(Callback):
         
         # Register relevancy metrics for unconditional generation as fractions (DDP-correct)
         # Always register for DDP sync (0/0 → NaN when no data)
-        if self.check_relevance and relevant_first_by_ref_uncond:
-            first_count = self.unconditional_metrics.epoch_first_valid_count
-            second_count = self.unconditional_metrics.epoch_second_valid_count
-            total_valid = first_count + second_count
-
-            for ref_name in sorted(relevant_first_by_ref_uncond.keys()):
-                ref_first = relevant_first_by_ref_uncond[ref_name]
-                ref_second = relevant_second_by_ref_uncond[ref_name]
-                ref_details = relevancy_details_uncond_by_ref[ref_name]
-
-                registry.register_fraction(
-                    f"molecule_relevance_unconditional_first/{ref_name}",
-                    ref_first, first_count,
-                    f"Unconditional first relevance vs {ref_name}", "Unconditional - Relevance",
-                )
-                registry.register_fraction(
-                    f"molecule_relevance_unconditional_second/{ref_name}",
-                    ref_second, second_count,
-                    f"Unconditional second relevance vs {ref_name}", "Unconditional - Relevance",
-                )
-                registry.register_fraction(
-                    f"molecule_relevance_unconditional/{ref_name}",
-                    ref_first + ref_second, total_valid,
-                    f"Unconditional relevance vs {ref_name}", "Unconditional - Relevance",
-                )
-                registry.register_fraction(
-                    f"relevance_large_ring_unconditional/{ref_name}",
-                    ref_details['large_ring'], total_valid,
-                    f"Unconditional large_ring vs {ref_name}", "Unconditional - Relevance",
-                )
-                registry.register_fraction(
-                    f"relevance_long_chain_unconditional/{ref_name}",
-                    ref_details['long_chain'], total_valid,
-                    f"Unconditional long_chain vs {ref_name}", "Unconditional - Relevance",
-                )
-                if self._should_print():
-                    self.printer.print_info(
-                        f"[Unconditional] relevance/{ref_name}: first={ref_first}/{first_count}, "
-                        f"second={ref_second}/{second_count}, "
-                        f"large_ring={ref_details['large_ring']}, "
-                        f"long_chain={ref_details['long_chain']}"
-                    )
         
         # Register conditional fraction metrics + log everything (already done above
         # when unconditional was skipped; here it includes unconditional metrics too)
@@ -3504,10 +3190,6 @@ class MoleculeValidationCallback(Callback):
         total_relevant_cond_by_ref: Dict[str, int] = {}
         total_relevancy_details_cond_by_ref: Dict[str, Dict[str, int]] = {}
         # Initialize per-reference tracking if relevancy is enabled
-        if self.check_relevance and self._reference_dataset_stats_by_name:
-            for ref_name in sorted(self._reference_dataset_stats_by_name.keys()):
-                total_relevant_cond_by_ref[ref_name] = 0
-                total_relevancy_details_cond_by_ref[ref_name] = {'fragmented': 0, 'large_ring': 0, 'long_chain': 0}
         # Use num_conditional_generations for conditional generation (not num_unconditional_generations)
         num_conditional_samples = int(self.num_conditional_generations)
         if isinstance(max_evals, int):
@@ -3537,10 +3219,6 @@ class MoleculeValidationCallback(Callback):
                 batch_relevant_by_ref: Dict[str, int] = {}
                 batch_relevancy_details_by_ref: Dict[str, Dict[str, int]] = {}
                 # Initialize per-reference tracking for this batch
-                if self.check_relevance and self._reference_dataset_stats_by_name:
-                    for ref_name in sorted(self._reference_dataset_stats_by_name.keys()):
-                        batch_relevant_by_ref[ref_name] = 0
-                        batch_relevancy_details_by_ref[ref_name] = {'fragmented': 0, 'large_ring': 0, 'long_chain': 0}
                 
                 # Note: generated_list has length = batch_size * num_generations_per_seed
                 # Results are ordered as: [seed0_gen0, seed0_gen1, ..., seed1_gen0, seed1_gen1, ...]
@@ -3563,63 +3241,6 @@ class MoleculeValidationCallback(Callback):
                         valid_generations += 1
                     
                     # Relevancy check for conditional generation in evaluate()
-                    if self.check_relevance and is_valid and canonical_gen:
-                        # Extract seed SMILES from input
-                        seed_smiles = None
-                        try:
-                            seed_tokens = inp_ids.reshape(-1).tolist()
-                            seed_smiles_list = SmilesUtils.tokens_to_smiles(module.tokenizer, seed_tokens)
-                            if seed_smiles_list and seed_smiles_list[0]:
-                                seed_smiles = seed_smiles_list[0]
-                                # Clean prompt tokens
-                                prompt_token_pattern = r'<(?:p(?:c|dir_[^>]*|[0d]?_[^>]*|_[^>]*)|dc|d_\d+)>'
-                                seed_smiles = re.sub(prompt_token_pattern, '', seed_smiles).strip()
-                        except Exception:
-                            pass
-                        
-                        if seed_smiles:
-                            seed_stats = get_seed_mol_stats(seed_smiles)
-                            
-                            # Check relevancy against each reference dataset
-                            if self._reference_dataset_stats_by_name:
-                                for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                    is_relevant, rel_details = check_relevance(
-                                        canonical_gen,
-                                        seed_smiles,
-                                        seed_stats,
-                                        ref_stats,
-                                        mode=self.relevance_mode
-                                    )
-                                    if is_relevant:
-                                        batch_relevant_by_ref[ref_name] += 1
-                                    # Track relevancy failure reasons per reference
-                                    if rel_details.get('fragmented', False):
-                                        batch_relevancy_details_by_ref[ref_name]['fragmented'] += 1
-                                    if rel_details.get('large_ring', False):
-                                        batch_relevancy_details_by_ref[ref_name]['large_ring'] += 1
-                                    if rel_details.get('long_chain', False):
-                                        batch_relevancy_details_by_ref[ref_name]['long_chain'] += 1
-                            else:
-                                # Fallback to default stats
-                                default_ref = self._default_reference_name or "default"
-                                if default_ref not in batch_relevant_by_ref:
-                                    batch_relevant_by_ref[default_ref] = 0
-                                    batch_relevancy_details_by_ref[default_ref] = {'fragmented': 0, 'large_ring': 0, 'long_chain': 0}
-                                is_relevant, rel_details = check_relevance(
-                                    canonical_gen,
-                                    seed_smiles,
-                                    seed_stats,
-                                    self.dataset_stats,
-                                    mode=self.relevance_mode
-                                )
-                                if is_relevant:
-                                    batch_relevant_by_ref[default_ref] += 1
-                                if rel_details.get('fragmented', False):
-                                    batch_relevancy_details_by_ref[default_ref]['fragmented'] += 1
-                                if rel_details.get('large_ring', False):
-                                    batch_relevancy_details_by_ref[default_ref]['large_ring'] += 1
-                                if rel_details.get('long_chain', False):
-                                    batch_relevancy_details_by_ref[default_ref]['long_chain'] += 1
                     
                     # Note: Memorization and property tracking is done internally by ConditionalMetricsComputer
                     # Metrics will be computed via cond_metrics.compute_and_return_dict() below
@@ -3651,9 +3272,6 @@ class MoleculeValidationCallback(Callback):
         
         # Compute conditional relevancy fractions per reference (if enabled)
         cond_relevance_fractions_by_ref: Dict[str, float] = {}
-        if self.check_relevance and total_cond_valid > 0 and total_relevant_cond_by_ref:
-            for ref_name, ref_relevant in total_relevant_cond_by_ref.items():
-                cond_relevance_fractions_by_ref[ref_name] = float(ref_relevant) / total_cond_valid
 
         # 2) Unconditional generation (use num_unconditional_generations)
         num_unconditional_samples = int(self.num_unconditional_generations)
@@ -3668,11 +3286,6 @@ class MoleculeValidationCallback(Callback):
         relevant_second_eval_by_ref: Dict[str, int] = {}
         relevancy_details_uncond_eval_by_ref: Dict[str, Dict[str, int]] = {}
         # Initialize per-reference tracking if relevancy is enabled
-        if self.check_relevance and self._reference_dataset_stats_by_name:
-            for ref_name in sorted(self._reference_dataset_stats_by_name.keys()):
-                relevant_first_eval_by_ref[ref_name] = 0
-                relevant_second_eval_by_ref[ref_name] = 0
-                relevancy_details_uncond_eval_by_ref[ref_name] = {'large_ring': 0, 'long_chain': 0}
         
         # Skip unconditional generation if num_unconditional_generations is 0
         if num_unconditional_samples > 0:
@@ -3716,91 +3329,8 @@ class MoleculeValidationCallback(Callback):
                     second_canon = SmilesUtils.canonicalize(second_smiles_string) if second_valid and second_smiles_string else None
                     self.unconditional_metrics.check_memorization(first_canon, second_canon, first_valid, second_valid)
 
-                # Relevancy check for unconditional generation in evaluate() (per reference)
-                if self.check_relevance:
-                    first_smiles, second_smiles = SmilesUtils.tokens_to_smiles(module.tokenizer, sampled_tokens)
-                    
-                    # Check first molecule against all references
-                    if first_valid and first_smiles:
-                        first_canon = SmilesUtils.canonicalize(first_smiles)
-                        if first_canon:
-                            if self._reference_dataset_stats_by_name:
-                                for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                    is_relevant, rel_details = check_relevance(
-                                        first_canon,
-                                        None,  # No seed
-                                        None,  # No seed stats
-                                        ref_stats,
-                                        mode=self.relevance_mode
-                                    )
-                                    if is_relevant:
-                                        relevant_first_eval_by_ref[ref_name] += 1
-                                    if rel_details.get('large_ring', False):
-                                        relevancy_details_uncond_eval_by_ref[ref_name]['large_ring'] += 1
-                                    if rel_details.get('long_chain', False):
-                                        relevancy_details_uncond_eval_by_ref[ref_name]['long_chain'] += 1
-                            else:
-                                # Fallback to default stats
-                                default_ref = self._default_reference_name or "default"
-                                if default_ref not in relevant_first_eval_by_ref:
-                                    relevant_first_eval_by_ref[default_ref] = 0
-                                    relevant_second_eval_by_ref[default_ref] = 0
-                                    relevancy_details_uncond_eval_by_ref[default_ref] = {'large_ring': 0, 'long_chain': 0}
-                                is_relevant, rel_details = check_relevance(
-                                    first_canon,
-                                    None,
-                                    None,
-                                    self.dataset_stats,
-                                    mode=self.relevance_mode
-                                )
-                                if is_relevant:
-                                    relevant_first_eval_by_ref[default_ref] += 1
-                                if rel_details.get('large_ring', False):
-                                    relevancy_details_uncond_eval_by_ref[default_ref]['large_ring'] += 1
-                                if rel_details.get('long_chain', False):
-                                    relevancy_details_uncond_eval_by_ref[default_ref]['long_chain'] += 1
-                    
-                    # Check second molecule against all references
-                    if second_valid and second_smiles:
-                        second_canon = SmilesUtils.canonicalize(second_smiles)
-                        if second_canon:
-                            if self._reference_dataset_stats_by_name:
-                                for ref_name, ref_stats in self._reference_dataset_stats_by_name.items():
-                                    is_relevant, rel_details = check_relevance(
-                                        second_canon,
-                                        None,  # No seed
-                                        None,  # No seed stats
-                                        ref_stats,
-                                        mode=self.relevance_mode
-                                    )
-                                    if is_relevant:
-                                        relevant_second_eval_by_ref[ref_name] += 1
-                                    if rel_details.get('large_ring', False):
-                                        relevancy_details_uncond_eval_by_ref[ref_name]['large_ring'] += 1
-                                    if rel_details.get('long_chain', False):
-                                        relevancy_details_uncond_eval_by_ref[ref_name]['long_chain'] += 1
-                            else:
-                                # Fallback to default stats
-                                default_ref = self._default_reference_name or "default"
-                                if default_ref not in relevant_second_eval_by_ref:
-                                    relevant_first_eval_by_ref[default_ref] = 0
-                                    relevant_second_eval_by_ref[default_ref] = 0
-                                    relevancy_details_uncond_eval_by_ref[default_ref] = {'large_ring': 0, 'long_chain': 0}
-                                is_relevant, rel_details = check_relevance(
-                                    second_canon,
-                                    None,
-                                    None,
-                                    self.dataset_stats,
-                                    mode=self.relevance_mode
-                                )
-                                if is_relevant:
-                                    relevant_second_eval_by_ref[default_ref] += 1
-                                if rel_details.get('large_ring', False):
-                                    relevancy_details_uncond_eval_by_ref[default_ref]['large_ring'] += 1
-                                if rel_details.get('long_chain', False):
-                                    relevancy_details_uncond_eval_by_ref[default_ref]['long_chain'] += 1
-                    
                 # Accumulate valid SMILES for comprehensive metrics
+                _, second_smiles = SmilesUtils.tokens_to_smiles(module.tokenizer, sampled_tokens)
                 if second_valid and second_smiles:
                     canonical = SmilesUtils.canonicalize(second_smiles)
                     if canonical:
@@ -3826,31 +3356,6 @@ class MoleculeValidationCallback(Callback):
         }
         
         # Add relevancy metrics if enabled (per reference)
-        if self.check_relevance:
-            # Conditional relevancy metrics per reference
-            if total_cond_valid > 0 and cond_relevance_fractions_by_ref:
-                for ref_name, frac_relevant in cond_relevance_fractions_by_ref.items():
-                    metrics[f"val_molecule_relevance_conditional/{ref_name}"] = frac_relevant
-                    ref_details = total_relevancy_details_cond_by_ref[ref_name]
-                    metrics[f"val_relevance_fragmented_conditional/{ref_name}"] = float(ref_details['fragmented']) / total_cond_valid
-                    metrics[f"val_relevance_large_ring_conditional/{ref_name}"] = float(ref_details['large_ring']) / total_cond_valid
-                    metrics[f"val_relevance_long_chain_conditional/{ref_name}"] = float(ref_details['long_chain']) / total_cond_valid
-            
-            # Unconditional relevancy metrics per reference
-            total_valid_uncond = first_valid_molecules + second_valid_molecules
-            if relevant_first_eval_by_ref:
-                for ref_name in sorted(relevant_first_eval_by_ref.keys()):
-                    ref_first = relevant_first_eval_by_ref[ref_name]
-                    ref_second = relevant_second_eval_by_ref[ref_name]
-                    ref_details = relevancy_details_uncond_eval_by_ref[ref_name]
-                    if first_valid_molecules > 0:
-                        metrics[f"val_molecule_relevance_unconditional_first/{ref_name}"] = float(ref_first) / first_valid_molecules
-                    if second_valid_molecules > 0:
-                        metrics[f"val_molecule_relevance_unconditional_second/{ref_name}"] = float(ref_second) / second_valid_molecules
-                    if total_valid_uncond > 0:
-                        metrics[f"val_molecule_relevance_unconditional/{ref_name}"] = float(ref_first + ref_second) / total_valid_uncond
-                        metrics[f"val_relevance_large_ring_unconditional/{ref_name}"] = float(ref_details['large_ring']) / total_valid_uncond
-                        metrics[f"val_relevance_long_chain_unconditional/{ref_name}"] = float(ref_details['long_chain']) / total_valid_uncond
         
         # Note: Memorization metrics in evaluate() mode are computed by ConditionalMetricsComputer
         # and returned via cond_metrics.compute_and_return_dict() below

@@ -25,6 +25,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import torch
 import yaml
 
@@ -593,6 +594,8 @@ def main():
                 memorization_rate = n_memorized / max(n_valid, 1)
 
                 # Structural similarity (Tanimoto to seed)
+                from pairit.rl.rewards import compute_tanimoto
+
                 tanimotos = []
                 for gs, ss in zip(gen_smiles, seed_smiles):
                     t = compute_tanimoto(ss, gs)

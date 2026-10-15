@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 from datasets import Dataset
+from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
 

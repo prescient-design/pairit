@@ -12,6 +12,7 @@ from pathlib import Path
 
 import torch
 from transformers import LlamaConfig, LlamaForCausalLM
+from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
 
