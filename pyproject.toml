@@ -20,6 +20,7 @@ dependencies = [
     # Imported at module level by the validation callback, so it has to be a
     # direct dependency rather than a transitive one.
     "matplotlib",
+    "seaborn",
     "pyarrow>=20,<25",
     "s3fs[boto3]",
     "boto3",

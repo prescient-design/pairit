@@ -35,7 +35,7 @@ model:
   # checkpoint; wrap the path in inner single quotes because Lightning ckpt filenames
   # contain '=' which Hydra otherwise treats as further overrides.
   ckpt_path: ???
-  model_name: CLM_150M
+  model_name: CLM_68M
   max_length: 1024 #512
   transform_fn: ${datamodule.transform_fn}
   # are other arguments needed? if not will use the defaults. e.g. use model_name?

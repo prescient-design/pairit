@@ -51,7 +51,19 @@ def _load_reference_seed_df(dataset: str, config: PairitEvalConfig, seed_label: 
         if not config.moleculenet_test_dir:
             raise ValueError(f"moleculenet_test_dir is required for dataset '{dataset}'")
         label_col = config.dataset_config.get(dataset, {}).get("label_col", DATASET_CONFIG[dataset]["label_col"])
-        path = Path(config.moleculenet_test_dir) / dataset / "test" / f"molecules_{dataset}_real.parquet"
+        # The bundled assets use `molecules.parquet`; older research trees use
+        # `molecules_<dataset>_real.parquet`. Accept either.
+        split_dir = Path(config.moleculenet_test_dir) / dataset / "test"
+        candidates = [
+            split_dir / "molecules.parquet",
+            split_dir / f"molecules_{dataset}_real.parquet",
+        ]
+        path = next((p for p in candidates if p.exists()), None)
+        if path is None:
+            raise FileNotFoundError(
+                f"No molecule table for '{dataset}' test split; looked for "
+                + " and ".join(str(p) for p in candidates)
+            )
         df = pd.read_parquet(path)
         if label_col in df.columns:
             df = df[df[label_col] == seed_label]

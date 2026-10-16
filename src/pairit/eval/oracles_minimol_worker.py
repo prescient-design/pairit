@@ -34,7 +34,12 @@ from typing import Dict, List, Optional
 # one filesystem. Defaults to assets/oracles/{moleculenet,tdc}/minimol/
 # resolved relative to this file (parents[3] = the repository root), so the worker keeps
 # working when pairit is not installed in the MiniMol venv.
-_ASSETS_ROOT = Path(__file__).resolve().parents[3] / "assets" / "oracles"
+# $PAIRIT_ASSETS_DIR wins when set, so a relocated asset tree keeps working in
+# this subprocess too; otherwise fall back to the in-repo location.
+_ASSETS_DIR = os.environ.get("PAIRIT_ASSETS_DIR")
+_ASSETS_ROOT = (
+    Path(_ASSETS_DIR) if _ASSETS_DIR else Path(__file__).resolve().parents[3] / "assets"
+) / "oracles"
 _DEFAULT_HEAD_DIRS = [
     str(_ASSETS_ROOT / "moleculenet" / "minimol"),
     str(_ASSETS_ROOT / "tdc" / "minimol"),

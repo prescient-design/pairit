@@ -51,7 +51,10 @@ def _seed_order_map(smiles: pd.Series) -> Dict[str, int]:
 def _load_test_class0(dataset: str, moleculenet_test_dir: Path = DEFAULT_MOLECULENET_TEST_DIR) -> pd.DataFrame:
     """Load class-0 test molecules from parquet, preserving row order."""
     label_col = LABEL_COLS[dataset]
-    path = moleculenet_test_dir / dataset / "test" / f"molecules_{dataset}_real.parquet"
+    # Bundled assets use `molecules.parquet`; older trees use the long name.
+    split_dir = moleculenet_test_dir / dataset / "test"
+    candidates = [split_dir / "molecules.parquet", split_dir / f"molecules_{dataset}_real.parquet"]
+    path = next((p for p in candidates if p.exists()), candidates[-1])
     df = pd.read_parquet(path)
     return df[df[label_col] == 0].reset_index(drop=True)
 
@@ -334,7 +337,11 @@ def load_mmp_prop_moleculenet() -> pd.DataFrame:
 
 def load_pairit_moleculenet(variant: str) -> pd.DataFrame:
     """
-    Load pre-exported Pairit MoleculeNet CSVs and rebuild stable seed/gen indexing.
+    Load pre-exported Pairit MoleculeNet generations and rebuild stable
+    seed/gen indexing.
+
+    The registered paths are parquet; dispatch on the suffix so a CSV export
+    still works.
     """
     path_map = get_default_generation_paths()[variant]["moleculenet"]
     frames = []
@@ -342,7 +349,7 @@ def load_pairit_moleculenet(variant: str) -> pd.DataFrame:
         path = Path(path)
         if not path.exists():
             continue
-        raw = pd.read_csv(path)
+        raw = pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
         frames.append(_normalize_pairit_block(raw, dataset=dataset, method=variant))
     return pd.concat(frames, ignore_index=True) if frames else _empty_df()
 
