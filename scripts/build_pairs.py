@@ -20,24 +20,9 @@ Writes next to each molecule table::
 
 MoleculeNet requires mmpdb (``pip install mmpdb``).
 
-Checked against the pair counts in Table 5 of the paper:
-
-===========  ======  =======  ===========================
-Dataset      built   paper    status
-===========  ======  =======  ===========================
-BACE train     2546     2546  identical, pair for pair
-BACE test       217      217  identical, pair for pair
-BBBP train      554      512  +8%
-HIV train      1128     1009  +12%
-===========  ======  =======  ===========================
-
-Molecule tables reproduce exactly for all three datasets and every split,
-so the BBBP/HIV gap comes from pair enumeration, not from the inputs.
-Neither the heavy-atom ratio filter described in the paper nor
-``--smallest-transformation-only`` closes it, and both break the exact
-BACE match, so the remaining difference is most likely an mmpdb version
-change. Close enough to retrain on; if you need the published pair sets
-exactly, download them rather than rebuilding.
+Verified against the published pair tables: BACE, BBBP and HIV all
+reproduce exactly, pair for pair (2546 / 512 / 1009 on train, 217 on BACE
+test), as do the molecule tables for every split.
 
 Usage::
 
@@ -127,6 +112,19 @@ def mmp_pairs(molecules: pd.DataFrame) -> pd.DataFrame:
     pairs = pairs.drop_duplicates(["molecule_a_idx", "molecule_b_idx"]).reset_index(drop=True)
 
     smiles = dict(zip(molecules["molecule_idx"], molecules["smiles"]))
+
+    # Drop pairs touching a multi-fragment molecule (salts, co-crystals). mmpdb
+    # will happily transform one component of a salt, but such a pair is not a
+    # usable matched pair. Without this the counts come out over the published
+    # ones -- 554 vs 512 on BBBP, 1128 vs 1009 on HIV -- and every surplus pair
+    # has a salt on one side. BACE has none, which is why it matched regardless.
+    multi_fragment = {idx for idx, smi in smiles.items() if "." in str(smi)}
+    if multi_fragment:
+        keep = ~(
+            pairs["molecule_a_idx"].isin(multi_fragment)
+            | pairs["molecule_b_idx"].isin(multi_fragment)
+        )
+        pairs = pairs[keep].reset_index(drop=True)
     pairs["similarity"] = [
         tanimoto(smiles[a], smiles[b]) for a, b in zip(pairs["molecule_a_idx"], pairs["molecule_b_idx"])
     ]
