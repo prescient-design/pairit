@@ -1,7 +1,11 @@
 degradation_stopping:
   _target_: pairit.callbacks.DegradationStoppingCallback
   monitor: val_loss  # Metric to monitor (e.g., "val_loss", "val/accuracy")
-  threshold: 0.1  # Threshold for stopping (interpretation depends on threshold_mode)
+  threshold: 0.01  # Threshold for stopping (interpretation depends on threshold_mode)
+  # 0.01 sits just above the observed validation noise floor on ZINC pretraining
+  # (~0.005 between consecutive checks over a 3,200-pair validation set), while
+  # val_loss itself plateaus around 0.55. At the previous 0.1 this never fired:
+  # it would have needed val_loss to climb from 0.554 to 0.654.
   threshold_mode: absolute  # "absolute" for additive difference, "proportional" for multiplicative factor
   # Examples:
   # - absolute: threshold=0.1 means stop when current >= best + 0.1 (for loss)
