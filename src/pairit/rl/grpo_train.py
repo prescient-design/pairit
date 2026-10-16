@@ -832,8 +832,8 @@ def main():
         import json
         meta = json.loads((best_dir / "best_reward_meta.json").read_text())
         logger.info(
-            "Best eval_reward=%.4f at step %d — converting to Lightning checkpoint",
-            meta["eval_reward"], meta["global_step"],
+            "Best weighted_eval_reward=%.4f at step %d — converting to Lightning checkpoint",
+            meta["weighted_eval_reward"], meta["global_step"],
         )
         from transformers import LlamaForCausalLM as _LlamaForCausalLM
         best_hf_model = _LlamaForCausalLM.from_pretrained(str(best_dir))
