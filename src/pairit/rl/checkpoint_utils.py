@@ -17,6 +17,21 @@ from transformers import PreTrainedTokenizerBase
 logger = logging.getLogger(__name__)
 
 
+def load_hf_for_export(checkpoint_dir: str, base_checkpoint_path: str) -> LlamaForCausalLM:
+    """Load full weights, or merge saved adapters into their original SFT base.
+
+    Use the explicit Lightning base for adapters: their recorded HF base path
+    may point to temporary storage on a training worker that no longer exists.
+    """
+    if (Path(checkpoint_dir) / "adapter_config.json").exists():
+        from peft import PeftModel
+
+        base_model, _ = lightning_to_hf(base_checkpoint_path)
+        model = PeftModel.from_pretrained(base_model, checkpoint_dir)
+        return model.merge_and_unload()
+    return LlamaForCausalLM.from_pretrained(checkpoint_dir)
+
+
 def lightning_to_hf(
     ckpt_path: str,
 ) -> tuple[LlamaForCausalLM, "PreTrainedTokenizerBase"]:
@@ -121,11 +136,21 @@ def hf_to_lightning(
     output_path : str
         Where to save the new ``.ckpt`` file.
     """
+    hf_state_dict = hf_model.state_dict()
+    adapter_keys = [
+        key for key in hf_state_dict
+        if ".lora_" in key or ".base_layer." in key or key.startswith("base_model.")
+    ]
+    if adapter_keys:
+        raise ValueError(
+            "Merge adapters before exporting a plain Lightning checkpoint; "
+            f"unmerged parameter names include {adapter_keys[:3]}"
+        )
+
     logger.info("Loading original checkpoint template: %s", original_ckpt_path)
     original = torch.load(original_ckpt_path, map_location="cpu", weights_only=False)
 
     # Build new state_dict with "model." prefix
-    hf_state_dict = hf_model.state_dict()
     new_state_dict = {f"model.{k}": v for k, v in hf_state_dict.items()}
 
     # Build checkpoint preserving all Lightning metadata from the original

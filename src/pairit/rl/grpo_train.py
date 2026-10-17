@@ -835,8 +835,8 @@ def main():
             "Best weighted_eval_reward=%.4f at step %d — converting to Lightning checkpoint",
             meta["weighted_eval_reward"], meta["global_step"],
         )
-        from transformers import LlamaForCausalLM as _LlamaForCausalLM
-        best_hf_model = _LlamaForCausalLM.from_pretrained(str(best_dir))
+        from pairit.rl.checkpoint_utils import load_hf_for_export
+        best_hf_model = load_hf_for_export(str(best_dir), args.ckpt_path)
         best_ckpt_path = str(output_dir / "model_best.ckpt")
         hf_to_lightning(best_hf_model, tokenizer, args.ckpt_path, best_ckpt_path)
         logger.info("Saved Lightning best checkpoint to %s", best_ckpt_path)

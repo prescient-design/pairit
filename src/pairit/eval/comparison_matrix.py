@@ -370,14 +370,15 @@ def _build_specs() -> List[SourceSpec]:
     # canonical-schema `generations.csv`. The underlying model is the same;
     # the export format is what differs. The per-dataset preference below
     # picks canonical_csv when both exist, else falls back to the raw parquet.
-    # pairit-rl is canonical_csv everywhere.
+    # New RL inference runs can also export all_generations.parquet.
     pairit_family_preferences: List[Tuple[str, List[Tuple[str, str]], int]] = [
         # (method_name, [(source_kind, filename), … preferred order], source_n_gen)
         ("pairit",      [("canonical_csv", "generations.csv"),
                          ("pairit_allgens_parquet", "all_generations.parquet")], 64),
         ("pairit-beam", [("pairit_allgens_parquet", "all_generations.parquet"),
                          ("canonical_csv", "generations.csv")],                   64),
-        ("pairit-rl",   [("canonical_csv", "generations.csv")],                   64),
+        ("pairit-rl",   [("canonical_csv", "generations.csv"),
+                         ("pairit_allgens_parquet", "all_generations.parquet")], 64),
     ]
     for method_name, format_prefs, n_gen in pairit_family_preferences:
         for dataset in DATASETS:
