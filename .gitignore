@@ -11,6 +11,7 @@ build
 
 # Environments
 .venv
+.venv-*
 .env
 
 # Editors and tooling caches
@@ -41,6 +42,15 @@ generations/
 lightning_logs/
 wandb/
 *.ckpt
+# Trained model and predictor weights must not be published.
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.joblib
+*.pkl
+*.npy
+*.npz
 *.log
 *.err
 *.out

@@ -134,6 +134,8 @@ def prepare_zinc(raw: Path, out: Path) -> None:
             rows.append(described)
 
         table = build_table(rows, split, "Class")
+        # The ZINC training configuration uses the lowercase property name.
+        table["logp"] = table["logP"]
         target = out / "zinc" / split / "molecules.parquet"
         target.parent.mkdir(parents=True, exist_ok=True)
         table.to_parquet(target, index=False)
