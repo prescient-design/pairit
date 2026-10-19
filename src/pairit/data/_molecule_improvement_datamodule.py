@@ -2980,7 +2980,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
         mp_context = "spawn" if self._num_workers > 0 else None
         
         # Timeout to detect DataLoader hangs - will raise RuntimeError if exceeded
-        timeout = 300  # 5 minutes per batch
+        timeout = 300 if self._num_workers > 0 else 0
         
         print(f"\n{'='*70}")
         print(f"[TRAIN DATALOADER CONFIG]")
@@ -2992,8 +2992,8 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
         print(f"  persistent_workers:      {self._num_workers > 0}")
         print(f"  timeout:                 {timeout}s")
         print(f"")
-        print(f"  NOTE: If a batch takes > {timeout}s, PyTorch will raise:")
-        print(f"        RuntimeError: DataLoader timed out after {timeout} seconds")
+        if timeout:
+            print(f"  NOTE: Worker batches time out after {timeout} seconds")
         print(f"{'='*70}\n")
             
         return DataLoader(
@@ -3017,7 +3017,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
         mp_context = "spawn" if self._num_workers > 0 else None
         
         # Timeout to detect DataLoader hangs - will raise RuntimeError if exceeded
-        timeout = 300  # 5 minutes per batch
+        timeout = 300 if self._num_workers > 0 else 0
         
         print(f"\n{'='*70}")
         print(f"[VAL DATALOADER CONFIG]")
@@ -3052,7 +3052,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
         mp_context = "spawn" if self._num_workers > 0 else None
         
         # Timeout to detect DataLoader hangs - will raise RuntimeError if exceeded
-        timeout = 300  # 5 minutes per batch
+        timeout = 300 if self._num_workers > 0 else 0
         
         print(f"\n{'='*70}")
         print(f"[TEST DATALOADER CONFIG]")
@@ -3086,7 +3086,7 @@ class MoleculeImprovementLightningDataModule(pl.LightningDataModule):
         mp_context = "spawn" if self._num_workers > 0 else None
         
         # Timeout to detect DataLoader hangs - will raise RuntimeError if exceeded
-        timeout = 300  # 5 minutes per batch
+        timeout = 300 if self._num_workers > 0 else 0
         
         print(f"\n{'='*70}")
         print(f"[PREDICT DATALOADER CONFIG]")

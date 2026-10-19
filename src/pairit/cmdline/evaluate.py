@@ -434,6 +434,11 @@ def evaluate(cfg: DictConfig) -> None:
         metadata=metadata,
     )
 
+    failures = [result for result in callback_results if not result.success]
+    if failures:
+        details = "; ".join(f"{result.class_name}: {result.error_message}" for result in failures)
+        raise RuntimeError(f"Evaluation failed: {details}. Report: {report_path}")
+
     # --- Optional pairit_eval post-processing ---
     pairit_cfg = getattr(cfg, "pairit_eval", None)
     if pairit_cfg and getattr(pairit_cfg, "enabled", False):
@@ -513,3 +518,7 @@ def evaluate(cfg: DictConfig) -> None:
         sum(_phase_times.values()),
         _total_wall - sum(_phase_times.values()),
     )
+
+
+if __name__ == "__main__":
+    evaluate()
