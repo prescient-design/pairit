@@ -178,9 +178,10 @@ point to the MiniMol environment.
 
 ## 6. Train and sample with PairIT-RL
 
-The following runnable recipe uses real training molecules. The recorded paper
-RL runs used additional synthetic seed molecules; reproducing that exact pool
-requires those prepared inputs. Set `RL_SEEDS` to that pool when available.
+RL uses real training molecules. The recorded runs select `split=train`, which
+excludes rows labeled `split=synthetic` in the original combined files. The real
+seed pools contain 798 BACE, 517 BBBP, and 1,420 HIV molecules before the internal
+90/10 RL train/evaluation split.
 
 ```bash
 export RL_SEEDS="$PAIRIT_ASSETS_DIR/data/moleculenet/$DATASET/train/molecules.parquet"
