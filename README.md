@@ -55,8 +55,9 @@ The builder stores structural neighbors. During pretraining, `epsilon=1` keeps
 pairs with an absolute logP difference of at least 1 and orders them from lower
 to higher logP. Prepared tables use the `logp` property column and live under
 `assets/data/zinc/{train,valid}/`. Neighbor selection and the training filter
-have been checked on source-data subsets; the full pair rebuild remains slow
-and has not been completed for this release.
+have been checked on source-data subsets. The full validation split has also
+been rebuilt and verified (24,887 molecules; 2,488,700 neighbor pairs). The full
+training-split rebuild is still in progress.
 
 ### Train the property predictors
 
@@ -230,16 +231,36 @@ with `scripts/evaluate_generations.py --pairit-rl <csv> --dataset <dataset>
 
 Signed-delta prompting, raw-attempt export, and evaluation are included. See the
 [prompting documentation](src/pairit/hydra_config/prompting/README.md) for training
-and evaluation commands. The assay recipes require prepared signed bidirectional
-pairs, which the ordinary pair builder does not produce. Preparing those inputs
-and reproducing the full prompting experiments remain unverified for this release.
+and evaluation commands. The assay recipes require split-isolated bidirectional
+pairs and matching molecule tables; the ordinary pair builder does not add reverse
+pairs. Local integration checks used rebuilt real-molecule pairs in both directions.
+
+Bounded training, checkpoint reload, raw-attempt export, scoring, and deterministic
+replay passed on ZINC, BACE, BBBP, and HIV. Each check used four ordered pairs and
+64 attempts per pair, including randomized-prompt controls. These checks establish
+runnability; they do not reproduce the full prompting experiments.
 
 ## Validation status
 
 MoleculeNet pair sets match the reference artifacts in all available splits.
 Evaluation of saved paper generations reproduces reported validity, with VIN
-within 0.23 percentage points. Fresh ZINC-to-SFT training comparisons are ongoing;
-exact numerical reproduction of newly trained models is not claimed.
+within 0.23 percentage points. Fresh ZINC pretraining, SFT, PairIT/Beam sampling,
+and evaluation completed on all three datasets. One fresh run gave the following
+VIN percentages using the paper evaluation protocol:
+
+| Dataset | Method | Paper VIN (%) | Fresh run VIN (%) |
+|---|---|---:|---:|
+| BACE | PairIT | 49.19 | 43.26 |
+| BACE | PairIT-Beam | 54.52 | 39.70 |
+| BBBP | PairIT | 87.27 | 85.68 |
+| BBBP | PairIT-Beam | 90.91 | 90.00 |
+| HIV | PairIT | 33.94 | 43.38 |
+| HIV | PairIT-Beam | 37.75 | 45.54 |
+
+These are single-run checks, not confidence intervals. Fresh results differ from
+the paper, especially BACE-Beam; exact numerical reproduction is not claimed.
+RL training/export/sampling and RF/MiniMol predictor training have also been run
+on all three datasets. The fast regression suite passes 146 tests (one skipped).
 
 ```bash
 pytest -q -m 'not slow'
