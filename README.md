@@ -41,10 +41,22 @@ The layout is `assets/data/moleculenet/<dataset>/<split>/{molecules,pairs}.parqu
 Pairs involving multi-fragment molecules are excluded. Verified train/test pair
 counts are BACE **2546/217**, BBBP **512/40**, and HIV **1009/165**.
 
-ZINC preparation is available through the same scripts with `--dataset zinc`.
-Its full pair rebuild is slow and has not been independently validated for this
-release. Pretraining expects `assets/data/zinc/{train,valid}/` containing molecule
-and pair tables, with the molecule property column named `logp`.
+For ZINC, build the 100 nearest neighbors per molecule using Morgan fingerprint
+Tanimoto similarity, independently within each split:
+
+```bash
+python scripts/download_data.py --dest data/raw --dataset zinc
+python scripts/prepare_molecules.py --raw data/raw --out assets/data --dataset zinc
+python scripts/build_pairs.py --molecules assets/data --dataset zinc \
+  --max-pairs-per-molecule 100
+```
+
+The builder stores structural neighbors. During pretraining, `epsilon=1` keeps
+pairs with an absolute logP difference of at least 1 and orders them from lower
+to higher logP. Prepared tables use the `logp` property column and live under
+`assets/data/zinc/{train,valid}/`. Neighbor selection and the training filter
+have been checked on source-data subsets; the full pair rebuild remains slow
+and has not been completed for this release.
 
 ### Train the property predictors
 
@@ -178,8 +190,7 @@ point to the MiniMol environment.
 
 ## 6. Train and sample with PairIT-RL
 
-RL uses real training molecules. The recorded runs select `split=train`, which
-excludes rows labeled `split=synthetic` in the original combined files. The real
+RL uses real training molecules selected with `split=train`. The
 seed pools contain 798 BACE, 517 BBBP, and 1,420 HIV molecules before the internal
 90/10 RL train/evaluation split.
 
@@ -217,9 +228,11 @@ with `scripts/evaluate_generations.py --pairit-rl <csv> --dataset <dataset>
 
 ## 7. Property prompting
 
-Prompting code is included, but the signed-prompt data preparation and full paper
-recipe have not been validated for this release. See the
-[prompting documentation](src/pairit/hydra_config/prompting/README.md).
+Signed-delta prompting, raw-attempt export, and evaluation are included. See the
+[prompting documentation](src/pairit/hydra_config/prompting/README.md) for training
+and evaluation commands. The assay recipes require prepared signed bidirectional
+pairs, which the ordinary pair builder does not produce. Preparing those inputs
+and reproducing the full prompting experiments remain unverified for this release.
 
 ## Validation status
 
