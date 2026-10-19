@@ -29,13 +29,9 @@ from pairit.cmdline._tokenizer_inheritance import (
     prepare_tokenizer_inheritance,
     get_checkpoint_path_for_inheritance,
 )
-from pairit.cmdline.evaluate import extract_run_name_from_path
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-# Register custom resolver for extracting run_name from checkpoint path
-OmegaConf.register_new_resolver("extract_run_name", extract_run_name_from_path, replace=True)
 
 
 def load_reference_smiles_files(

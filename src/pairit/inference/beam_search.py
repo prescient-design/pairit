@@ -58,7 +58,6 @@ import pandas as pd
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from pairit.cmdline.evaluate import extract_run_name_from_path
 from pairit.inference.filters import VINFilter
 from pairit.inference.scorers import ScoredCandidate
 from pairit.inference.utils import (
@@ -79,10 +78,6 @@ from pairit.callbacks.molecule_validation.smiles_utils import SmilesUtils
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-OmegaConf.register_new_resolver(
-    "extract_run_name", extract_run_name_from_path, replace=True
-)
 
 
 class BeamSearchGenerator:

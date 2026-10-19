@@ -72,50 +72,6 @@ def extract_checkpoint_metadata(ckpt_path: str) -> dict[str, Any]:
         return {"global_step": 0, "epoch": 0}
 
 
-def extract_run_name_from_path(ckpt_path: str) -> str:
-    """Extract the run name from a checkpoint path.
-
-    Parses paths of the form
-    ``…/lobster_runs/{run_name}/{timestamp}/{checkpoint_file}`` and returns
-    the ``{run_name}`` component.  Used as an OmegaConf custom resolver
-    (``${extract_run_name:…}``) so that evaluation configs can automatically
-    derive the run name for output directory organisation.
-
-    Parameters
-    ----------
-    ckpt_path : str
-        Absolute path to a ``.ckpt`` file.
-
-    Returns
-    -------
-    str
-        The run name directory immediately below ``lobster_runs/``.
-
-    Raises
-    ------
-    ValueError
-        If the path is empty, does not contain ``lobster_runs``, or has
-        no directory component after ``lobster_runs``.
-    """
-    if not ckpt_path:
-        raise ValueError("ckpt_path is empty or None")
-
-    path = Path(ckpt_path)
-    parts = path.parts
-
-    # Accept both the current "runs" directory and the pre-rename "lobster_runs",
-    # so checkpoint paths from older runs still resolve to a run_name.
-    for marker in ("runs", "lobster_runs"):
-        if marker not in parts:
-            continue
-        runs_idx = parts.index(marker)
-        if runs_idx + 1 < len(parts):
-            return parts[runs_idx + 1]
-        raise ValueError(f"Could not extract run_name from path: {ckpt_path} (no directory after {marker!r})")
-
-    raise ValueError(f"Could not find a 'runs' or 'lobster_runs' directory in path: {ckpt_path}")
-
-
 def _run_pairit_eval(output_dir: str, pairit_cfg: DictConfig) -> None:
     """Run pairit_eval's evaluate.py on exported CSV files.
 
@@ -220,10 +176,6 @@ def _run_pairit_eval(output_dir: str, pairit_cfg: DictConfig) -> None:
                 logger.info("pairit_eval completed successfully for %s", csv_file.name)
         except Exception as e:
             logger.warning("Failed to run pairit_eval on %s: %s", csv_file, e)
-
-
-# Register custom resolver for extracting run_name from checkpoint path
-OmegaConf.register_new_resolver("extract_run_name", extract_run_name_from_path, replace=True)
 
 
 @hydra.main(config_path="../hydra_config", config_name="evaluate", version_base=None)

@@ -20,7 +20,7 @@ datamodule:
 model:
   _target_: pairit.model.PairITCLM2
   ckpt_path: ???  # Required: path to model checkpoint
-  run_name: ${extract_run_name:${model.ckpt_path}}
+  run_name: zinc  # output-dir label; override with model.run_name=...
   extra_name: best_val
   model_name: CLM_68M
   max_length: 300

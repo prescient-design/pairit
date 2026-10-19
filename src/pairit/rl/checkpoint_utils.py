@@ -14,6 +14,9 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM
 from transformers import PreTrainedTokenizerBase
 
+# Historical paper checkpoints store tokenizer classes under their former name.
+import pairit.cmdline._checkpoint_compat  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 

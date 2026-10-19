@@ -53,7 +53,6 @@ import lightning.pytorch as pl
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-from pairit.cmdline.evaluate import extract_run_name_from_path
 from pairit.inference.filters import VINFilter
 from pairit.inference.strategies import TopKPerSeed
 from pairit.inference.utils import (
@@ -71,10 +70,6 @@ from pairit.inference.utils import (
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
-OmegaConf.register_new_resolver(
-    "extract_run_name", extract_run_name_from_path, replace=True
-)
 
 
 class BestOfNGenerator:
