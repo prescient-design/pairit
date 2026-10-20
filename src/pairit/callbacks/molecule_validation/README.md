@@ -162,7 +162,7 @@ reference_smiles_files:
     path: /path/to/zinc250k_full_train/molecules.parquet
     default: true  # Used for backward-compatible metric names (no /ref_name suffix)
   - name: bace_train
-    path: /path/to/bace/train/molecules_bace_real.parquet
+    path: /path/to/bace/train/molecules.parquet
 ```
 
 The `default: true` reference set's metrics are also logged without the `/{ref_name}` suffix for backward compatibility with existing WandB dashboards.

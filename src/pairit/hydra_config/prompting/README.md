@@ -58,7 +58,7 @@ an absolute output directory at `RUN_ROOT`, and a compatible checkpoint at
 ```bash
 pairit_train --config-name=train_molecule_improvement \
   experiment=property_prompting_signed \
-  data="${DATASET}_real_molecule_improvement" \
+  data="${DATASET}_molecule_improvement" \
   prompting="signed_${DATASET}" \
   data.root="$DATA_ROOT" \
   data.molecule_filename="train/molecules_${DATASET}.parquet" \
@@ -96,7 +96,7 @@ must point to an absolute data/output location; `CHECKPOINT` is required.
 ```bash
 pairit_eval --config-name=prompted_pair_evaluate \
   dataset="$DATASET" \
-  data@datamodule="${DATASET}_real_molecule_improvement" \
+  data@datamodule="${DATASET}_molecule_improvement" \
   prompting@datamodule.prompting="signed_${DATASET}" \
   datamodule.root="$DATA_ROOT" \
   datamodule.molecule_filename="train/molecules_${DATASET}.parquet" \

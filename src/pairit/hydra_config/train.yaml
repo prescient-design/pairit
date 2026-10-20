@@ -11,7 +11,7 @@
 # use `train` (this file) when you're picking the pieces yourself.
 defaults:
   - _self_
-  - data: bace_real_molecule_improvement
+  - data: bace_molecule_improvement
   - model: clm2_smiles
   - callbacks: molecule_improvement
   - logger: wandb

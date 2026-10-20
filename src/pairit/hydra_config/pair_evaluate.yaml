@@ -29,7 +29,7 @@ model:
   _target_: pairit.model.PairITCLM2 #pairit.model.UME # is model_name needed?
   run_name: from_scratch_600
   extra_name: last_ckpt
-  # No default — every derived config (bace_real_pair_evaluate, zinc_pair_evaluate,
+  # No default — every derived config (bace_pair_evaluate, zinc_pair_evaluate,
   # ...) overrides this with the bundled checkpoint under
   # ${pairit_assets:checkpoints/pairit/...}. Override on the CLI to point at a custom
   # checkpoint; wrap the path in inner single quotes because Lightning ckpt filenames

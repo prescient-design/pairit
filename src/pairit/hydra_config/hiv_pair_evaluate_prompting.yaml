@@ -1,11 +1,11 @@
 # HIV evaluation with property prompting enabled.
-# Extends hiv_real_pair_evaluate with the all-props prompting block (mirrors
-# bace_real_pair_evaluate_prompting). Used for the property-prompt grid sweep on
-# the hiv_multiprop_real checkpoint (logp prompting via eval_override).
+# Extends hiv_pair_evaluate with the all-props prompting block (mirrors
+# bace_pair_evaluate_prompting). Used for the property-prompt grid sweep on
+# the HIV multiproperty checkpoint (logp prompting via eval_override).
 #
-# pairit_eval --config-name=hiv_real_pair_evaluate_prompting model.ckpt_path=...
+# pairit_eval --config-name=hiv_pair_evaluate_prompting model.ckpt_path=...
 defaults:
-  - hiv_real_pair_evaluate
+  - hiv_pair_evaluate
   - _self_
 
 datamodule:

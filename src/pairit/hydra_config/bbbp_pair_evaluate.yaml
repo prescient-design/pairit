@@ -4,7 +4,7 @@
 # pairit_eval model.model_path=path_to_your_checkpoint.ckpt
 
 defaults:
-  - data@datamodule: bbbp_real_molecule_improvement
+  - data@datamodule: bbbp_molecule_improvement
   - _self_
 
 output_dir: ${oc.env:PAIRIT_OUTPUT_ROOT,./outputs}/${model.run_name}/evaluation_results/${model.extra_name}/${split}/${now:%Y-%m-%d_%H-%M-%S}

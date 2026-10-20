@@ -26,7 +26,7 @@ def _compose(name, overrides):
     ],
 )
 def test_signed_train_eval_share_profiles(dataset, activity, logp_limit):
-    data_profile = "zinc_molecule_improvement" if dataset == "zinc" else f"{dataset}_real_molecule_improvement"
+    data_profile = "zinc_molecule_improvement" if dataset == "zinc" else f"{dataset}_molecule_improvement"
     eval_profile = "signed_zinc_eval" if dataset == "zinc" else f"signed_{dataset}"
     train = _compose(
         "train_molecule_improvement",

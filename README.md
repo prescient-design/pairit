@@ -1,14 +1,11 @@
-# PairIT: Property-Guided Generation of Small Molecules with Matched Pairs
+# PairIT: Autoregressive Transformers for Low-Data Molecule Optimization
 
-PairIT learns property-improving molecular edits from matched pairs of SMILES.
 This repository contains the training, sampling, and evaluation code for the paper
-*Property-Guided Generation of Small Molecules with Matched Pairs*.
+*PairIT: Autoregressive Transformers for Low-Data Molecule Optimization*. PairIT learns property-improving molecular edits from matched pairs of SMILES.
 
-**Code only.** Model checkpoints and trained RF/MiniMol predictors are not
-redistributed. Train them locally using the commands below. Public dataset
-sources are listed at the end of this README.
+We are not able to release the model checkpoints. To reproduce results in the paper, follow the training recipe in the README.
 
-## Setup
+## Environment Setup
 
 Use Python 3.11 or 3.12 and a CUDA GPU for model training.
 
@@ -22,12 +19,21 @@ export PAIRIT_RUNS="$PWD/runs"
 export PAIRIT_OUTPUT_ROOT="$PWD/outputs"
 ```
 
-Keep the dependency lock: the GRPO code uses TRL's pre-tokenized input interface.
-MiniMol runs in a separate environment described below.
+Note, MiniMol predictive model runs in a separate environment described below.
 
 ## 1. Data preprocessing and pair creation
 
-Download the source files and prepare MoleculeNet tables and pairs:
+Download the datasets and create molecule pairs. 
+
+### Dataset sources
+
+The downloader fetches files directly from the upstream repositories:
+
+- [Graph-DiT](https://github.com/liugangcode/Graph-DiT): BACE, BBBP, HIV, and scaffold splits.
+- [MOOD](https://github.com/SeulLee05/MOOD): ZINC-250K and validation indices.
+
+
+MoleculeNet (Matched Molecular Pairs):
 
 ```bash
 python scripts/download_data.py --dest data/raw
@@ -38,11 +44,10 @@ python scripts/build_pairs.py --molecules assets/data \
 ```
 
 The layout is `assets/data/moleculenet/<dataset>/<split>/{molecules,pairs}.parquet`.
-Pairs involving multi-fragment molecules are excluded. Verified train/test pair
-counts are BACE **2546/217**, BBBP **512/40**, and HIV **1009/165**.
+Pairs involving multi-fragment molecules are excluded. 
 
-For ZINC, build the 100 nearest neighbors per molecule using Morgan fingerprint
-Tanimoto similarity, independently within each split:
+ZINC (100 nearest neighbors per molecule using Morgan fingerprint
+Tanimoto similarity):
 
 ```bash
 python scripts/download_data.py --dest data/raw --dataset zinc
@@ -51,18 +56,13 @@ python scripts/build_pairs.py --molecules assets/data --dataset zinc \
   --max-pairs-per-molecule 100
 ```
 
-The builder stores structural neighbors. During pretraining, `epsilon=1` keeps
-pairs with an absolute logP difference of at least 1 and orders them from lower
-to higher logP. Prepared tables use the `logp` property column and live under
-`assets/data/zinc/{train,valid}/`. Neighbor selection and the training filter
-have been checked on source-data subsets. The full validation split has also
-been rebuilt and verified (24,887 molecules; 2,488,700 neighbor pairs). The full
-training-split rebuild is still in progress.
+During pretraining, pairs are filtered with an absolute logP difference of at least `epsilon=1` 
+and live under `assets/data/zinc/{train,valid}/`.
 
 ### Train the property predictors
 
-RF predictors rank candidates and provide RL rewards. The independent MiniMol
-predictors score the final selected molecules. Both are fit on training data only.
+Random Forest (RF) predictors rank candidates and provide RL rewards. The independent MiniMol
+predictors score the final selected molecules.
 
 ```bash
 python scripts/train_rf_predictors.py
@@ -88,10 +88,9 @@ export PAIRIT_MINIMOL_PYTHON="$PWD/.venv-minimol/bin/python"
 "$PAIRIT_MINIMOL_PYTHON" scripts/train_minimol_predictors.py
 ```
 
-MiniMol downloads its encoder from its upstream provider. This repository contains
-no encoder or predictor weights. Heads are saved under
+MiniMol loads the pretrained encoder bundled with `minimol==1.3.5`; no separate
+encoder download is required. Heads are saved under
 `assets/oracles/moleculenet/minimol/{BACE,BBBP,HIV}/head.joblib`.
-Both predictor scripts accept `--dataset`, `--molecules`, and `--out`.
 
 ## 2. Pretrain on ZINC
 
@@ -103,15 +102,11 @@ pairit_train --config-name=train_molecule_improvement \
   model.model_name=CLM_68M model.max_length=300 seed=0 logger=csv \
   data.test_pair_filename=null \
   trainer.val_check_interval=500 trainer.limit_val_batches=10 \
-  ++trainer.max_epochs=1 trainer.max_time=00:01:30:00 \
   callbacks.degradation_stopping.threshold=0.1 \
   paths.root_dir="$PAIRIT_RUNS/zinc_pretrain"
 ```
 
-The 90-minute limit is a wall-clock budget and depends on hardware. The original
-checkpoints record sequence length 300; Table 4 lists 1024. These commands use
-300. Checkpoints are saved beneath a timestamped run directory. Set
-`PRETRAIN_CKPT` to the complete path of the checkpoint selected by validation loss:
+Set `PRETRAIN_CKPT` to the complete path of the checkpoint selected by validation loss (selected by early stopping):
 
 ```bash
 export PRETRAIN_CKPT=/absolute/path/to/the/pretraining/checkpoint.ckpt
@@ -125,7 +120,7 @@ Run once per dataset:
 DATASET=bace
 LABEL=Class
 pairit_train --config-name=train_molecule_improvement \
-  data="${DATASET}_real_molecule_improvement" model=clm2_smiles \
+  data="${DATASET}_molecule_improvement" model=clm2_smiles \
   model.model_name=CLM_68M model.max_length=300 seed=0 logger=csv \
   "model.ckpt_path='$PRETRAIN_CKPT'" \
   ++trainer.max_epochs=200 callbacks.degradation_stopping.threshold=0.1 \
@@ -140,39 +135,35 @@ pairit_train --config-name=train_molecule_improvement \
 | BBBP | `bbbp` | `p_np` |
 | HIV | `hiv` | `HIV_active` |
 
-The historical BBBP/HIV configurations use the test split for validation and
-checkpoint selection. That behavior is preserved for reproduction; use separate
-validation files for new experiments and report that change.
+The BBBP/HIV configurations use the test split for validation and
+checkpoint selection because of an insufficient number of pairs in 
+the validation set due to the small dataset size. 
 
 ## 4. Sample with PairIT and PairIT-Beam
 
 Set `SFT_CKPT` to the full saved checkpoint path for the selected dataset.
-Checkpoints can be stored anywhere; no particular parent directory is required.
 The `DATASET` and `LABEL` variables are defined in section 3.
 
 ```bash
 export SFT_CKPT=/absolute/path/to/the/finetuned/checkpoint.ckpt
 
 pairit_best_of_n "model.ckpt_path='$SFT_CKPT'" \
-  "data@datamodule=${DATASET}_real_molecule_improvement" \
-  "eval_config=${DATASET}_real_pair_evaluate" \
+  "data@datamodule=${DATASET}_molecule_improvement" \
+  "eval_config=${DATASET}_pair_evaluate" \
   ++datamodule.ignore_pairs=true ++datamodule.seeds_only_conditional=true \
   ++datamodule.filter_column="$LABEL" ++datamodule.filter_value=0 \
   best_of_n.n=64 generation.temperature=0.5 seed=42 \
   output.dir="$PAIRIT_OUTPUT_ROOT/$DATASET/pairit"
 
 pairit_beam_search "model.ckpt_path='$SFT_CKPT'" \
-  "data@datamodule=${DATASET}_real_molecule_improvement" \
-  "eval_config=${DATASET}_real_pair_evaluate" \
+  "data@datamodule=${DATASET}_molecule_improvement" \
+  "eval_config=${DATASET}_pair_evaluate" \
   ++datamodule.ignore_pairs=true ++datamodule.seeds_only_conditional=true \
   ++datamodule.filter_column="$LABEL" ++datamodule.filter_value=0 \
   beam_search.beam_width=4 beam_search.expansions_per_candidate=8 \
   beam_search.num_rounds=3 generation.temperature=0.5 seed=42 \
   output.dir="$PAIRIT_OUTPUT_ROOT/$DATASET/pairit-beam"
 ```
-
-Each command writes `all_generations.parquet`. Preserve these raw candidates for
-evaluation; the sampler's selected summary is not the paper's evaluation input.
 
 ## 5. Evaluate generations
 
@@ -184,16 +175,16 @@ python scripts/evaluate_generations.py --dataset "$DATASET" \
 ```
 
 This uses RF selection, within-seed canonical deduplication, top five of the
-first 64 candidates, and independent MiniMol scoring. Missing candidates count
-against the full test-seed budget. Use a new output directory for each evaluation.
+first 64 candidates, and independent MiniMol scoring on the final selection. 
+Final results are reported using the top five generations per test seed.
+Missing generations (fewer than five) count as failures.
+Missing candidates count against the full test-seed budget. 
+
 RF and MiniMol predictors must be trained first, and `PAIRIT_MINIMOL_PYTHON` must
 point to the MiniMol environment.
 
 ## 6. Train and sample with PairIT-RL
 
-RL uses real training molecules selected with `split=train`. The
-seed pools contain 798 BACE, 517 BBBP, and 1,420 HIV molecules before the internal
-90/10 RL train/evaluation split.
 
 ```bash
 export RL_SEEDS="$PAIRIT_ASSETS_DIR/data/moleculenet/$DATASET/train/molecules.parquet"
@@ -211,7 +202,7 @@ python -m pairit.rl.grpo_train --ckpt-path "$SFT_CKPT" \
   --gradient-accumulation-steps 1 --num-generations 8 \
   --lora-r 16 --num-train-epochs 10 --seed 0
 
-pairit_eval --config-name="${DATASET}_real_pair_evaluate" \
+pairit_eval --config-name="${DATASET}_pair_evaluate" \
   "model.ckpt_path='$PAIRIT_RUNS/${DATASET}_rl/model_last.ckpt'" \
   ++datamodule.ignore_pairs=true ++datamodule.seeds_only_conditional=true \
   ++datamodule.filter_column="$LABEL" ++datamodule.filter_value=0 \
@@ -222,58 +213,17 @@ pairit_eval --config-name="${DATASET}_real_pair_evaluate" \
   output_dir="$PAIRIT_OUTPUT_ROOT/$DATASET/pairit-rl"
 ```
 
-Training writes merged `model_last.ckpt` and `model_best.ckpt` files. The paper
-used the last checkpoint. Evaluate the exported `*generated_molecules_pairit.csv`
+Evaluate the exported `*generated_molecules_pairit.csv`
 with `scripts/evaluate_generations.py --pairit-rl <csv> --dataset <dataset>
 --output-dir <new-directory>`.
 
-## 7. Property prompting
+## 7. Property prompting and multiproperty optimization
 
-Signed-delta prompting, raw-attempt export, and evaluation are included. See the
-[prompting documentation](src/pairit/hydra_config/prompting/README.md) for training
-and evaluation commands. The assay recipes require split-isolated bidirectional
-pairs and matching molecule tables; the ordinary pair builder does not add reverse
-pairs. Local integration checks used rebuilt real-molecule pairs in both directions.
-
-Bounded training, checkpoint reload, raw-attempt export, scoring, and deterministic
-replay passed on ZINC, BACE, BBBP, and HIV. Each check used four ordered pairs and
-64 attempts per pair, including randomized-prompt controls. These checks establish
-runnability; they do not reproduce the full prompting experiments.
-
-## Validation status
-
-MoleculeNet pair sets match the reference artifacts in all available splits.
-Evaluation of saved paper generations reproduces reported validity, with VIN
-within 0.23 percentage points. Fresh ZINC pretraining, SFT, PairIT/Beam sampling,
-and evaluation completed on all three datasets. One fresh run gave the following
-VIN percentages using the paper evaluation protocol:
-
-| Dataset | Method | Paper VIN (%) | Fresh run VIN (%) |
-|---|---|---:|---:|
-| BACE | PairIT | 49.19 | 43.26 |
-| BACE | PairIT-Beam | 54.52 | 39.70 |
-| BBBP | PairIT | 87.27 | 85.68 |
-| BBBP | PairIT-Beam | 90.91 | 90.00 |
-| HIV | PairIT | 33.94 | 43.38 |
-| HIV | PairIT-Beam | 37.75 | 45.54 |
-
-These are single-run checks, not confidence intervals. Fresh results differ from
-the paper, especially BACE-Beam; exact numerical reproduction is not claimed.
-RL training/export/sampling and RF/MiniMol predictor training have also been run
-on all three datasets. The fast regression suite passes 146 tests (one skipped).
-
-```bash
-pytest -q -m 'not slow'
-```
+See the [prompting documentation](src/pairit/hydra_config/prompting/README.md) for training
+and evaluation commands. 
 
 ## License
 
 [Genentech Non-Commercial Software License, Version 1.0](LICENSE).
 Upstream datasets and dependencies retain their own terms.
 
-## Dataset sources
-
-The downloader fetches files directly from the upstream repositories:
-
-- [Graph-DiT](https://github.com/liugangcode/Graph-DiT): BACE, BBBP, HIV, and scaffold splits.
-- [MOOD](https://github.com/SeulLee05/MOOD): ZINC-250K and validation indices.

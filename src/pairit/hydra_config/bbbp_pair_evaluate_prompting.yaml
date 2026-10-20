@@ -1,19 +1,18 @@
-# Model evaluation configuration with prompting enabled
-# Extends bace_real_pair_evaluate with bace_all_props prompting settings
+# BBBP evaluation with property prompting enabled.
+# Extends bbbp_pair_evaluate with the all-props prompting block (mirrors
+# bace_pair_evaluate_prompting). Used for the property-prompt grid sweep on
+# the BBBP multiproperty checkpoint (logp prompting via eval_override).
 #
-# To run:
-# pairit_eval --config-name=bace_real_pair_evaluate_prompting model.ckpt_path=path_to_checkpoint.ckpt
-
+# pairit_eval --config-name=bbbp_pair_evaluate_prompting model.ckpt_path=...
 defaults:
-  - bace_real_pair_evaluate
+  - bbbp_pair_evaluate
   - _self_
 
-# Prompting settings (from bace_all_props / zinc_all_props)
 datamodule:
   prompting:
     properties:
       enabled: true
-      names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "Class"]
+      names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "p_np"]
       selection:
         mode: all
         k: 1
@@ -28,7 +27,7 @@ datamodule:
         prefer_columns: true
         compute_if_missing: true
         column_map: {}
-        fallback_column_map: {Class: "bace_b_oracle_pred"}
+        fallback_column_map: {p_np: "bbbp_b_oracle_pred"}
       value_binning:
         mode: fixed
         default:
@@ -44,7 +43,7 @@ datamodule:
           hba: {range: [0.0, 20.0]}
           rotatable_bonds: {range: [0.0, 20.0]}
           frac_sp3_c: {range: [0.0, 1.0]}
-          Class: {range: [0.0, 1.0]}
+          p_np: {range: [0.0, 1.0]}
       delta_binning:
         mode: fixed
         default:
@@ -60,7 +59,7 @@ datamodule:
           hba: {range: [0.0, 20.0]}
           rotatable_bonds: {range: [0.0, 20.0]}
           frac_sp3_c: {range: [0.0, 1.0]}
-          Class: {range: [0.0, 1.0]}
+          p_np: {range: [0.0, 1.0]}
     distance:
       enabled: false
       source:
@@ -70,6 +69,6 @@ datamodule:
     tokenizer:
       add_property_prompt_tokens: true
       property_prompt_tokens:
-        property_names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "Class"]
+        property_names: ["logp", "qed", "sa", "mw", "tpsa", "hbd", "hba", "rotatable_bonds", "frac_sp3_c", "p_np"]
         num_value_bins: 32
         num_delta_bins: 16

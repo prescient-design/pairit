@@ -32,7 +32,7 @@ build
 # `data/` is what scripts/download_data.py writes; neither is redistributed
 # here. Tokenizer assets ship with the package, so keep their JSON.
 assets/
-data/
+/data/
 !src/pairit/assets/**/*.json
 
 # Run outputs

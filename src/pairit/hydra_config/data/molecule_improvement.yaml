@@ -5,7 +5,7 @@ defaults:
 
 _target_: pairit.data._molecule_improvement_datamodule.MoleculeImprovementLightningDataModule
 
-# Data root directory. Concrete data configs (bace_real_molecule_improvement.yaml,
+# Data root directory. Concrete data configs (bace_molecule_improvement.yaml,
 # etc.) override this with their own path. Set to Hydra's required marker so a
 # bare `data=molecule_improvement` without an override fails loud rather than
 # reading a stale researcher-specific default.

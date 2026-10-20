@@ -77,12 +77,12 @@ TRAINING_CONFIGS: list[dict] = [
         ],
     },
     {
-        "id": "bace_real",
-        "description": "BACE real-pair fine-tuning (random init, no prompting)",
-        "required_data": [f"{MOLECULENET_ROOT}/bace/train/pairs_bace_real.parquet"],
+        "id": "bace",
+        "description": "BACE matched-pair fine-tuning (random init, no prompting)",
+        "required_data": [f"{MOLECULENET_ROOT}/bace/train/pairs.parquet"],
         "hydra_args": [
             "--config-name=train_molecule_improvement",
-            "data=bace_real_molecule_improvement",
+            "data=bace_molecule_improvement",
             "++callbacks.molecule_validation.visualization_property_name=Class",
             "++callbacks.molecule_validation.property_names=[Class]",
             "++data.prompting.distance.enabled=false",
@@ -94,12 +94,12 @@ TRAINING_CONFIGS: list[dict] = [
         ],
     },
     {
-        "id": "bbbp_real",
-        "description": "BBBP real-pair fine-tuning (random init, no prompting)",
-        "required_data": [f"{MOLECULENET_ROOT}/bbbp/train/pairs_bbbp_real.parquet"],
+        "id": "bbbp",
+        "description": "BBBP matched-pair fine-tuning (random init, no prompting)",
+        "required_data": [f"{MOLECULENET_ROOT}/bbbp/train/pairs.parquet"],
         "hydra_args": [
             "--config-name=train_molecule_improvement",
-            "data=bbbp_real_molecule_improvement",
+            "data=bbbp_molecule_improvement",
             "++callbacks.molecule_validation.visualization_property_name=p_np",
             "++callbacks.molecule_validation.property_names=[p_np]",
             "++data.prompting.distance.enabled=false",
@@ -111,12 +111,12 @@ TRAINING_CONFIGS: list[dict] = [
         ],
     },
     {
-        "id": "hiv_real",
-        "description": "HIV real-pair fine-tuning (random init, no prompting)",
-        "required_data": [f"{MOLECULENET_ROOT}/hiv/train/pairs_hiv_real.parquet"],
+        "id": "hiv",
+        "description": "HIV matched-pair fine-tuning (random init, no prompting)",
+        "required_data": [f"{MOLECULENET_ROOT}/hiv/train/pairs.parquet"],
         "hydra_args": [
             "--config-name=train_molecule_improvement",
-            "data=hiv_real_molecule_improvement",
+            "data=hiv_molecule_improvement",
             "++callbacks.molecule_validation.visualization_property_name=HIV_active",
             "++callbacks.molecule_validation.property_names=[HIV_active]",
             "++data.prompting.distance.enabled=false",
@@ -132,7 +132,7 @@ TRAINING_CONFIGS: list[dict] = [
         "description": "Mixed ZINC+BACE training with dataset identity tokens",
         "required_data": [
             f"{ZINC_DATA_ROOT}/pairs_train.parquet",
-            f"{MOLECULENET_ROOT}/bace/train/pairs_bace_real.parquet",
+            f"{MOLECULENET_ROOT}/bace/train/pairs.parquet",
         ],
         "hydra_args": [
             "--config-name=train_molecule_improvement",
